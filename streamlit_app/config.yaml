@@ -1,0 +1,6 @@
+application:
+  name: "RNI Customer Retention System"
+
+roles:
+  technical: "technical"
+  business: "business"

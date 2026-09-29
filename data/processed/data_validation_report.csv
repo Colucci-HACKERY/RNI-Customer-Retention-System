@@ -1,0 +1,11 @@
+Check,Count
+Total records,1033036
+Missing Customer IDs,235151
+Missing descriptions,4275
+Exact duplicate records,0
+Cancellation records,19104
+Negative quantities,22496
+Zero quantities,0
+Negative prices,5
+Zero prices,6014
+Invalid dates,0

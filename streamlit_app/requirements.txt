@@ -1,0 +1,6 @@
+streamlit
+pandas
+PyYAML
+streamlit-authenticator
+bcrypt
+openpyxl

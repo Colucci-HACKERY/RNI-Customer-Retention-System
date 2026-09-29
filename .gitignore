@@ -1,0 +1,41 @@
+# Streamlit secrets
+streamlit_app/.streamlit/secrets.toml
+
+# Local RBAC database
+streamlit_app/data/users.db
+streamlit_app/data/users.db-journal
+streamlit_app/data/users.db-wal
+streamlit_app/data/users.db-shm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.log
+
+# Large generated datasets
+data/processed/clean_transactions.csv
+
+# Streamlit generated transaction outputs
+streamlit_app/outputs/published/latest_clean_transactions.csv
+streamlit_app/outputs/published/archive/
+
+# Runtime audit log
+streamlit_app/outputs/audit/audit_trail.csv
