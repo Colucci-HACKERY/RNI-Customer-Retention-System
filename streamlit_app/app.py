@@ -1,7 +1,5 @@
 # ============================================================
-# RNI CUSTOMER RETENTION SYSTEM
-# DEPLOYMENT-READY STREAMLIT APPLICATION
-#
+# CUSTOMER RETENTION SYSTEM
 # Features:
 # - Authentication
 # - Streamlit Secrets
@@ -15,12 +13,8 @@
 # - Version & Publish
 # - Power BI Hand-off
 # - Persistent Audit Trail
-# ============================================================
 
-
-# ============================================================
 # IMPORTS
-# ============================================================
 
 import io
 import re
@@ -36,7 +30,6 @@ import streamlit_authenticator as stauth
 import yaml
 
 
-# ============================================================
 # PAGE CONFIGURATION
 # ============================================================
 
@@ -46,8 +39,6 @@ st.set_page_config(
     layout="wide"
 )
 
-
-# ============================================================
 # PATHS
 # ============================================================
 
@@ -97,8 +88,6 @@ USER_DB_PATH = (
     / "users.db"
 )
 
-
-# ============================================================
 # CREATE REQUIRED DIRECTORIES
 # ============================================================
 
@@ -115,8 +104,7 @@ for directory in [
     )
 
 
-# ============================================================
-# LOAD NON-SENSITIVE CONFIGURATION
+# LOADING NON-SENSITIVE CONFIGURATION
 # ============================================================
 
 def load_config():
