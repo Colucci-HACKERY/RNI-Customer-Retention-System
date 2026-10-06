@@ -1,7 +1,7 @@
 Customer Retention and Analytics System
 An interactive, data-driven application designed to analyze customer behavior, perform Recency-Frequency-Monetary (RFM) segmentation, and deliver decision-focused insights to improve customer retention. Built using Python, Pandas, Streamlit, and Power BI.
 
-Project Overview
+**Project Overview**
 Customer retention is critical for sustainable business growth. This project processes raw transactional data to identify high-value customers, highlight churn risks, and provide actionable recommendations for retention strategies.
 The application cleans raw datasets, computes RFM scores, classifies customer segments, and provides an interactive visual dashboard for decision-makers.
 Key Features
