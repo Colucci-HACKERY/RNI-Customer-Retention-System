@@ -1,7 +1,4 @@
-# ============================================================
 # RNI CUSTOMER RETENTION SYSTEM
-# DEPLOYMENT-READY STREAMLIT APPLICATION
-#
 # Features:
 # - Authentication
 # - Streamlit Secrets
@@ -20,9 +17,6 @@
 # - Data quality scoring and detailed cleaning audit
 # - Seven governed team CSV outputs
 # - Lightweight business Quick Analytics with map, products and MBA
-# ============================================================
-
-
 # ============================================================
 # IMPORTS
 # ============================================================
@@ -59,7 +53,6 @@ except Exception:
     association_rules = None
     MLXTEND_AVAILABLE = False
 
-
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
@@ -69,7 +62,6 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
-
 
 # ============================================================
 # APPLICATION STYLING
@@ -1447,7 +1439,8 @@ if user_role == TECHNICAL_ROLE:
                 "Version & Publish",
                 "Audit Trail",
                 "User Management",
-            ]
+            ],
+            key="technical_navigation"
         )
     )
 
@@ -1461,7 +1454,8 @@ elif user_role == BUSINESS_ROLE:
                 "Pipeline Status",
                 "Quick Analytics",
                 "Power BI Dashboard",
-            ]
+            ],
+            key="business_navigation"
         )
     )
 
@@ -1768,6 +1762,52 @@ def loading_overlay(message="Please wait while the application processes your re
         yield
     finally:
         overlay.empty()
+
+
+def go_to_technical_page(page_name):
+    """Move the Technical Workspace radio to the requested next pipeline stage."""
+
+    st.session_state["technical_navigation"] = page_name
+
+
+def render_proceed_button(label, target_page, key):
+    """Render a consistent next-step button after a completed technical stage."""
+
+    st.write("")
+    st.button(
+        label,
+        type="primary",
+        key=key,
+        on_click=go_to_technical_page,
+        args=(target_page,)
+    )
+
+
+# Common country aliases found in the Online Retail II source are standardised
+# once here so Streamlit and the governed Power BI outputs use the same names.
+COUNTRY_RENAME_MAP = {
+    "EIRE": "Ireland",
+    "USA": "United States",
+    "RSA": "South Africa",
+    "Korea": "South Korea",
+    "UK": "United Kingdom",
+    "U.K.": "United Kingdom",
+    "United States of America": "United States",
+}
+
+# These values are useful for auditing but are not individual countries and
+# therefore should not be sent to a country-name choropleth.
+COUNTRY_MAP_EXCLUSIONS = {
+    "Unspecified",
+    "European Community",
+}
+
+
+def standardise_country_names(series):
+    """Trim country labels and replace known aliases with reporting names."""
+
+    countries = series.astype("string").str.strip()
+    return countries.replace(COUNTRY_RENAME_MAP)
 
 
 def completed_sales_view(df):
@@ -2870,8 +2910,14 @@ def clean_dataset(
     })
 
     # 2. Standardise text fields without changing business meaning.
-    for column in ["Invoice", "StockCode", "Country"]:
+    for column in ["Invoice", "StockCode"]:
         prepared_df[column] = prepared_df[column].astype(str).str.strip()
+
+    # Standardise known country aliases at the governed cleaning stage so all
+    # downstream team CSVs, Streamlit visuals and Power BI use one country name.
+    prepared_df["Country"] = standardise_country_names(
+        prepared_df["Country"]
+    )
 
     prepared_df["Description"] = (
         prepared_df["Description"]
@@ -3905,8 +3951,6 @@ st.caption(
     "and Power BI hand-off."
 )
 
-st.divider()
-
 
 # ============================================================
 # TECHNICAL WORKSPACE
@@ -3931,13 +3975,10 @@ if user_role == TECHNICAL_ROLE:
             "before publication to the Power BI reporting layer."
         )
 
-        col1, col2, col3, col4, col5 = (
-            st.columns(
-                5
-            )
-        )
+        # Keep status cards readable: three on the first row and two below.
+        top1, top2, top3 = st.columns(3)
 
-        col1.metric(
+        top1.metric(
             "Dataset",
             (
                 "Loaded"
@@ -3946,7 +3987,7 @@ if user_role == TECHNICAL_ROLE:
             )
         )
 
-        col2.metric(
+        top2.metric(
             "Validation",
             (
                 "Completed"
@@ -3955,7 +3996,7 @@ if user_role == TECHNICAL_ROLE:
             )
         )
 
-        col3.metric(
+        top3.metric(
             "Cleaning",
             (
                 "Completed"
@@ -3964,7 +4005,9 @@ if user_role == TECHNICAL_ROLE:
             )
         )
 
-        col4.metric(
+        bottom1, bottom2 = st.columns(2)
+
+        bottom1.metric(
             "RFM",
             (
                 "Completed"
@@ -3973,7 +4016,7 @@ if user_role == TECHNICAL_ROLE:
             )
         )
 
-        col5.metric(
+        bottom2.metric(
             "Power BI Handoff",
             (
                 "Published"
@@ -3982,10 +4025,9 @@ if user_role == TECHNICAL_ROLE:
             )
         )
 
-        st.info(
-            "Use the Technical Workspace menu to continue "
-            "through the controlled preparation pipeline."
-        )
+        # The status cards already communicate pipeline progress, so the
+        # previous full-width information banner was removed to keep this
+        # overview compact and uncluttered.
 
 
     # ========================================================
@@ -4328,6 +4370,12 @@ if user_role == TECHNICAL_ROLE:
                 use_container_width=True
             )
 
+            render_proceed_button(
+                "Proceed to Data Validation",
+                "Data Validation",
+                "proceed_ingestion_to_validation"
+            )
+
 
     # ========================================================
     # DATA VALIDATION
@@ -4563,6 +4611,13 @@ if user_role == TECHNICAL_ROLE:
                         "All validation checks passed."
                     )
 
+                if st.session_state.validation_complete and failed == 0:
+                    render_proceed_button(
+                        "Proceed to Data Cleaning",
+                        "Data Cleaning",
+                        "proceed_validation_to_cleaning"
+                    )
+
 
     # ========================================================
     # DATA CLEANING
@@ -4723,33 +4778,33 @@ if user_role == TECHNICAL_ROLE:
                     "Detailed Cleaning Report"
                 )
 
-                col1, col2, col3, col4, col5 = (
-                    st.columns(
-                        5
-                    )
-                )
+                # Five cleaning KPIs are split across two rows so large retail
+                # counts and longer labels remain fully visible on desktop.
+                top1, top2, top3 = st.columns(3)
 
-                col1.metric(
+                top1.metric(
                     "Raw Rows",
                     f"{summary['starting_rows']:,}"
                 )
 
-                col2.metric(
+                top2.metric(
                     "Duplicates Removed",
                     f"{summary['duplicates_removed']:,}"
                 )
 
-                col3.metric(
+                top3.metric(
                     "Cancellations Preserved",
                     f"{summary['cancellation_rows']:,}"
                 )
 
-                col4.metric(
+                bottom1, bottom2 = st.columns(2)
+
+                bottom1.metric(
                     "Completed Sales",
                     f"{summary['completed_sales_rows']:,}"
                 )
 
-                col5.metric(
+                bottom2.metric(
                     "Rows Retained",
                     f"{summary['retained_percentage']:.2f}%"
                 )
@@ -4827,6 +4882,12 @@ if user_role == TECHNICAL_ROLE:
                 st.dataframe(
                     cleaned_df.head(20),
                     use_container_width=True
+                )
+
+                render_proceed_button(
+                    "Proceed to RFM Feature Engineering",
+                    "RFM Feature Engineering",
+                    "proceed_cleaning_to_rfm"
                 )
 
 
@@ -5052,6 +5113,12 @@ if user_role == TECHNICAL_ROLE:
                         20
                     ),
                     use_container_width=True
+                )
+
+                render_proceed_button(
+                    "Proceed to Version & Publish",
+                    "Version & Publish",
+                    "proceed_rfm_to_publish"
                 )
 
 
@@ -5324,30 +5391,30 @@ if user_role == TECHNICAL_ROLE:
                     "Latest Publication"
                 )
 
-                col1, col2, col3, col4 = (
-                    st.columns(
-                        4
-                    )
-                )
+                # Publication metadata uses a 2x2 layout so long version/user
+                # values remain readable instead of being truncated.
+                top1, top2 = st.columns(2)
 
-                col1.metric(
+                top1.metric(
                     "Publication Version",
                     summary[
                         "publication_version"
                     ]
                 )
 
-                col2.metric(
+                top2.metric(
                     "Published Customers",
                     f"{summary['rfm_rows']:,}"
                 )
 
-                col3.metric(
+                bottom1, bottom2 = st.columns(2)
+
+                bottom1.metric(
                     "High-Value At Risk",
                     f"{summary['high_value_at_risk']:,}"
                 )
 
-                col4.metric(
+                bottom2.metric(
                     "Published By",
                     summary[
                         "published_by"
@@ -5469,9 +5536,15 @@ if user_role == TECHNICAL_ROLE:
 
                 st.success(
                     "Power BI hand-off is ready. "
-                    "Use the three files in outputs/published/power_bi/. "
+                    "Use the governed outputs in outputs/published/power_bi/. "
                     "Predictive labels are governed as "
                     "1 = At Risk and 0 = Retained."
+                )
+
+                render_proceed_button(
+                    "Proceed to Audit Trail",
+                    "Audit Trail",
+                    "proceed_publish_to_audit"
                 )
 
 
@@ -6957,6 +7030,14 @@ else:
                     errors="coerce"
                 ).fillna(0)
 
+                # Re-apply country standardisation when reading an older approved
+                # publication so the Quick Analytics labels remain consistent even
+                # before the next technical republish.
+                if "Country" in sales.columns:
+                    sales["Country"] = standardise_country_names(
+                        sales["Country"]
+                    )
+
                 overview_tab, product_tab, geo_tab = st.tabs([
                     "Overview",
                     "Products & Basket",
@@ -7007,13 +7088,15 @@ else:
                         else 0.0
                     )
 
-                    c1, c2, c3, c4 = st.columns(4)
+                    # Give the revenue/AOV/order KPIs a wider first row.
+                    # Customers moves below alongside the top-customer/country cards.
+                    c1, c2, c3 = st.columns(3)
                     c1.metric("Revenue", f"£{total_revenue:,.0f}")
-                    c2.metric("Customers", f"{total_customers:,}")
-                    c3.metric("Average Order Value", f"£{average_order_value:,.2f}")
-                    c4.metric("Orders", f"{invoice_count:,}")
+                    c2.metric("Average Order Value", f"£{average_order_value:,.2f}")
+                    c3.metric("Orders", f"{invoice_count:,}")
 
-                    c5, c6 = st.columns(2)
+                    c4, c5, c6 = st.columns(3)
+                    c4.metric("Customers", f"{total_customers:,}")
                     c5.metric(
                         "Top Customer",
                         top_customer_text,
@@ -7160,6 +7243,12 @@ else:
                         .sort_values("Revenue", ascending=False)
                     )
 
+                    # Keep aggregate/unknown labels in the country table, but do not
+                    # send them to Plotly's country-name map where they cannot resolve.
+                    map_country_summary = country_summary.loc[
+                        ~country_summary["Country"].isin(COUNTRY_MAP_EXCLUSIONS)
+                    ].copy()
+
                     if country_summary.empty:
                         st.info("No country information is available in the approved sales data.")
                     else:
@@ -7169,7 +7258,7 @@ else:
                             st.subheader("Revenue by Country")
                             if PLOTLY_AVAILABLE:
                                 map_fig = px.choropleth(
-                                    country_summary,
+                                    map_country_summary,
                                     locations="Country",
                                     locationmode="country names",
                                     color="Revenue",
