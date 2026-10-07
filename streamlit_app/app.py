@@ -1,5 +1,7 @@
 # ============================================================
-# CUSTOMER RETENTION SYSTEM
+# RNI CUSTOMER RETENTION SYSTEM
+# DEPLOYMENT-READY STREAMLIT APPLICATION
+#
 # Features:
 # - Authentication
 # - Streamlit Secrets
@@ -13,12 +15,22 @@
 # - Version & Publish
 # - Power BI Hand-off
 # - Persistent Audit Trail
+# - Excel multi-sheet approval workflow
+# - Cancellation-preserving clean transaction layer
+# - Data quality scoring and detailed cleaning audit
+# - Seven governed team CSV outputs
+# - Lightweight business Quick Analytics with map, products and MBA
+# ============================================================
 
+
+# ============================================================
 # IMPORTS
+# ============================================================
 
 import io
 import re
 import sqlite3
+from contextlib import contextmanager
 
 from datetime import datetime
 from pathlib import Path
@@ -29,7 +41,26 @@ import streamlit as st
 import streamlit_authenticator as stauth
 import yaml
 
+# Optional visual/association-analysis dependencies.
+# The application still runs if these are unavailable; only the related
+# business visual or Market Basket Analysis feature is disabled.
+try:
+    import plotly.express as px
+    PLOTLY_AVAILABLE = True
+except Exception:
+    px = None
+    PLOTLY_AVAILABLE = False
 
+try:
+    from mlxtend.frequent_patterns import apriori, association_rules
+    MLXTEND_AVAILABLE = True
+except Exception:
+    apriori = None
+    association_rules = None
+    MLXTEND_AVAILABLE = False
+
+
+# ============================================================
 # PAGE CONFIGURATION
 # ============================================================
 
@@ -39,6 +70,47 @@ st.set_page_config(
     layout="wide"
 )
 
+
+# ============================================================
+# APPLICATION STYLING
+# ============================================================
+# Keep Streamlit's native appearance, but improve spacing and make tab bars
+# wrap after three tabs so navigation never disappears off-screen.
+st.markdown(
+    """
+    <style>
+        .block-container {
+            padding-top: 1.6rem;
+            padding-bottom: 2.5rem;
+        }
+        div[data-testid="stMetric"] {
+            border: 1px solid rgba(120, 120, 120, 0.18);
+            border-radius: 12px;
+            padding: 0.75rem 0.9rem;
+            background: rgba(250, 250, 250, 0.02);
+        }
+        div[data-baseweb="tab-list"] {
+            flex-wrap: wrap !important;
+            row-gap: 0.4rem !important;
+        }
+        div[data-baseweb="tab-list"] button[role="tab"] {
+            flex: 1 1 calc(33.333% - 0.5rem) !important;
+            max-width: calc(33.333% - 0.5rem) !important;
+            min-width: 180px !important;
+        }
+        @media (max-width: 900px) {
+            div[data-baseweb="tab-list"] button[role="tab"] {
+                flex-basis: 100% !important;
+                max-width: 100% !important;
+            }
+        }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+# ============================================================
 # PATHS
 # ============================================================
 
@@ -60,6 +132,11 @@ ARCHIVE_DIR = (
 POWER_BI_DIR = (
     PUBLISH_DIR
     / "power_bi"
+)
+
+TEAM_OUTPUT_DIR = (
+    PUBLISH_DIR
+    / "team_outputs"
 )
 
 MODEL_ARTIFACT_DIR = (
@@ -88,6 +165,8 @@ USER_DB_PATH = (
     / "users.db"
 )
 
+
+# ============================================================
 # CREATE REQUIRED DIRECTORIES
 # ============================================================
 
@@ -95,6 +174,7 @@ for directory in [
     PUBLISH_DIR,
     ARCHIVE_DIR,
     POWER_BI_DIR,
+    TEAM_OUTPUT_DIR,
     AUDIT_DIR,
     USER_DATA_DIR
 ]:
@@ -104,7 +184,8 @@ for directory in [
     )
 
 
-# LOADING NON-SENSITIVE CONFIGURATION
+# ============================================================
+# LOAD NON-SENSITIVE CONFIGURATION
 # ============================================================
 
 def load_config():
@@ -1378,6 +1459,7 @@ elif user_role == BUSINESS_ROLE:
             "Business Workspace",
             [
                 "Pipeline Status",
+                "Quick Analytics",
                 "Power BI Dashboard",
             ]
         )
@@ -1416,6 +1498,15 @@ session_defaults = {
 
     "validation_complete":
         False,
+
+    "validation_score":
+        None,
+
+    "mba_rules":
+        None,
+
+    "mba_diagnostics":
+        None,
 
     "cleaned_data":
         None,
@@ -1617,6 +1708,9 @@ def reset_downstream_from_ingestion():
 
     st.session_state.validation_results = None
     st.session_state.validation_complete = False
+    st.session_state.validation_score = None
+    st.session_state.mba_rules = None
+    st.session_state.mba_diagnostics = None
 
     st.session_state.cleaned_data = None
     st.session_state.cleaning_steps = None
@@ -1628,6 +1722,519 @@ def reset_downstream_from_ingestion():
     st.session_state.rfm_complete = False
 
     reset_publication_state()
+
+
+# ============================================================
+# SHARED UI / ANALYTICS HELPERS
+# ============================================================
+
+@contextmanager
+def loading_overlay(message="Please wait while the application processes your request..."):
+    """Display a fixed, centred loading message during heavier operations."""
+
+    overlay = st.empty()
+    overlay.markdown(
+        f"""
+        <div style="
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            background: rgba(255,255,255,0.82);
+            backdrop-filter: blur(2px);
+            display: flex;
+            align-items: center;
+            justify-content: center;">
+            <div style="
+                max-width: 460px;
+                padding: 1.4rem 1.8rem;
+                border-radius: 14px;
+                background: white;
+                border: 1px solid rgba(0,0,0,0.12);
+                box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+                text-align: center;">
+                <div style="font-size:1.15rem;font-weight:700;margin-bottom:0.35rem;">
+                    Loading, please wait...
+                </div>
+                <div style="font-size:0.92rem;color:#555;">
+                    {message}
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    try:
+        yield
+    finally:
+        overlay.empty()
+
+
+def completed_sales_view(df):
+    """Return the analytical sales view while preserving flagged cancellations."""
+
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    working = df.copy()
+
+    if "IsCompletedSale" in working.columns:
+        return working.loc[
+            working["IsCompletedSale"].fillna(False)
+        ].copy()
+
+    mask = pd.Series(True, index=working.index)
+
+    if "IsCancellation" in working.columns:
+        mask &= ~working["IsCancellation"].fillna(False)
+
+    if "Quantity" in working.columns:
+        mask &= pd.to_numeric(working["Quantity"], errors="coerce").gt(0)
+
+    if "Price" in working.columns:
+        mask &= pd.to_numeric(working["Price"], errors="coerce").gt(0)
+
+    return working.loc[mask].copy()
+
+
+def calculate_data_quality_score(validation_results):
+    """Convert PASS/WARNING/FAIL checks into a simple transparent 0-100 score."""
+
+    if validation_results is None or validation_results.empty:
+        return 0.0
+
+    weights = {
+        "PASS": 1.0,
+        "WARNING": 0.5,
+        "FAIL": 0.0,
+    }
+
+    values = (
+        validation_results["Status"]
+        .astype(str)
+        .str.upper()
+        .map(weights)
+        .fillna(0.0)
+    )
+
+    return float(values.mean() * 100)
+
+
+@st.cache_data(show_spinner=False)
+def read_csv_cached(path_text, modified_time):
+    """Cache published CSV reads while automatically invalidating on file changes."""
+    del modified_time
+    return pd.read_csv(path_text)
+
+
+def safe_read_published_csv(path):
+    """Read a published CSV using a modification-aware Streamlit cache."""
+
+    path = Path(path)
+    if not path.exists():
+        return None
+
+    return read_csv_cached(
+        str(path),
+        path.stat().st_mtime_ns
+    )
+
+
+def build_invoice_summary(cleaned_df):
+    """Create one governed row per invoice, including cancellation invoices."""
+
+    if cleaned_df is None or cleaned_df.empty:
+        return pd.DataFrame()
+
+    df = cleaned_df.copy()
+
+    if "Revenue" not in df.columns:
+        df["Revenue"] = (
+            pd.to_numeric(df["Quantity"], errors="coerce").fillna(0)
+            * pd.to_numeric(df["Price"], errors="coerce").fillna(0)
+        )
+
+    aggregation = {
+        "InvoiceDate": "min",
+        "Customer ID": "first",
+        "Country": "first",
+        "IsCancellation": "max",
+        "Quantity": "sum",
+        "Revenue": "sum",
+    }
+
+    invoice_summary = (
+        df.groupby("Invoice", dropna=False)
+        .agg(aggregation)
+        .reset_index()
+        .rename(columns={
+            "Quantity": "TotalQuantity",
+            "Revenue": "InvoiceValue",
+        })
+    )
+
+    if "Description" in df.columns:
+        unique_products = (
+            df.groupby("Invoice", dropna=False)["Description"]
+            .nunique(dropna=True)
+            .rename("UniqueProducts")
+            .reset_index()
+        )
+        invoice_summary = invoice_summary.merge(
+            unique_products,
+            on="Invoice",
+            how="left"
+        )
+
+    invoice_summary["IsCompletedSale"] = (
+        ~invoice_summary["IsCancellation"].fillna(False)
+        & invoice_summary["TotalQuantity"].gt(0)
+        & invoice_summary["InvoiceValue"].gt(0)
+    )
+
+    return invoice_summary
+
+
+def build_rfm_customer_features(cleaned_df, rfm_df):
+    """Build reusable customer features from completed sales only."""
+
+    sales = completed_sales_view(cleaned_df)
+
+    if sales.empty or rfm_df is None or rfm_df.empty:
+        return rfm_df.copy() if rfm_df is not None else pd.DataFrame()
+
+    sales = sales.dropna(subset=["Customer ID", "InvoiceDate"]).copy()
+    sales["Customer ID"] = pd.to_numeric(
+        sales["Customer ID"],
+        errors="coerce"
+    )
+    sales = sales.dropna(subset=["Customer ID"]).copy()
+    sales["Customer ID"] = sales["Customer ID"].astype(int)
+
+    invoice_level = (
+        sales[["Customer ID", "Invoice", "InvoiceDate", "Revenue"]]
+        .groupby(["Customer ID", "Invoice"], as_index=False)
+        .agg(
+            InvoiceDate=("InvoiceDate", "min"),
+            InvoiceValue=("Revenue", "sum")
+        )
+    )
+
+    observation_date = sales["InvoiceDate"].max()
+    recent_start = observation_date - pd.Timedelta(days=60)
+    prior_start = observation_date - pd.Timedelta(days=120)
+
+    customer_features = (
+        sales.groupby("Customer ID")
+        .agg(
+            AverageQuantityPerLine=("Quantity", "mean"),
+            ProductDiversity=("Description", "nunique"),
+            FirstPurchase=("InvoiceDate", "min"),
+            LastPurchaseFeature=("InvoiceDate", "max"),
+        )
+        .reset_index()
+    )
+
+    order_features = (
+        invoice_level.groupby("Customer ID")
+        .agg(
+            Orders=("Invoice", "nunique"),
+            AverageOrderValue=("InvoiceValue", "mean"),
+            TotalOrderValue=("InvoiceValue", "sum"),
+        )
+        .reset_index()
+    )
+
+    customer_features = customer_features.merge(
+        order_features,
+        on="Customer ID",
+        how="left"
+    )
+
+    customer_features["CustomerTenureDays"] = (
+        observation_date - customer_features["FirstPurchase"]
+    ).dt.days
+
+    gaps = (
+        invoice_level.sort_values(["Customer ID", "InvoiceDate"])
+        .assign(
+            GapDays=lambda x: x.groupby("Customer ID")["InvoiceDate"]
+            .diff()
+            .dt.total_seconds()
+            .div(86400)
+        )
+        .groupby("Customer ID")["GapDays"]
+        .mean()
+        .rename("AverageDaysBetweenOrders")
+        .reset_index()
+    )
+
+    recent_counts = (
+        invoice_level.loc[invoice_level["InvoiceDate"] > recent_start]
+        .groupby("Customer ID")["Invoice"]
+        .nunique()
+        .rename("Recent60dOrders")
+    )
+
+    prior_counts = (
+        invoice_level.loc[
+            invoice_level["InvoiceDate"].gt(prior_start)
+            & invoice_level["InvoiceDate"].le(recent_start)
+        ]
+        .groupby("Customer ID")["Invoice"]
+        .nunique()
+        .rename("Prior60dOrders")
+    )
+
+    customer_features = customer_features.merge(
+        gaps,
+        on="Customer ID",
+        how="left"
+    )
+
+    customer_features = customer_features.merge(
+        pd.concat([recent_counts, prior_counts], axis=1)
+        .fillna(0)
+        .reset_index(),
+        on="Customer ID",
+        how="left"
+    )
+
+    for column in ["Recent60dOrders", "Prior60dOrders"]:
+        customer_features[column] = (
+            customer_features[column]
+            .fillna(0)
+            .astype(int)
+        )
+
+    customer_features["OrderFrequencyTrend"] = (
+        customer_features["Recent60dOrders"]
+        - customer_features["Prior60dOrders"]
+    )
+
+    return (
+        rfm_df.merge(
+            customer_features,
+            on="Customer ID",
+            how="left"
+        )
+    )
+
+
+def build_customer_summary(reporting_df, rfm_features_df, risk_df):
+    """Create the business-facing Customer 360 master dataset."""
+
+    customer_summary = reporting_df.copy()
+
+    if rfm_features_df is not None and not rfm_features_df.empty:
+        extra_columns = [
+            column for column in rfm_features_df.columns
+            if column == "Customer ID"
+            or column not in customer_summary.columns
+        ]
+        customer_summary = customer_summary.merge(
+            rfm_features_df[extra_columns],
+            on="Customer ID",
+            how="left"
+        )
+
+    if risk_df is not None and not risk_df.empty:
+        risk_customer_column = None
+        for candidate in [
+            "Customer ID",
+            "CustomerID",
+            "customer_id",
+            "Customer_ID",
+        ]:
+            if candidate in risk_df.columns:
+                risk_customer_column = candidate
+                break
+
+        if risk_customer_column is not None:
+            risk_copy = risk_df.copy()
+            risk_copy[risk_customer_column] = pd.to_numeric(
+                risk_copy[risk_customer_column],
+                errors="coerce"
+            )
+            risk_copy = risk_copy.dropna(subset=[risk_customer_column]).copy()
+            risk_copy[risk_customer_column] = risk_copy[risk_customer_column].astype(int)
+
+            if risk_customer_column != "Customer ID":
+                risk_copy = risk_copy.rename(
+                    columns={risk_customer_column: "Customer ID"}
+                )
+
+            risk_columns = [
+                column for column in risk_copy.columns
+                if column == "Customer ID"
+                or column not in customer_summary.columns
+            ]
+
+            customer_summary = customer_summary.merge(
+                risk_copy[risk_columns].drop_duplicates(subset=["Customer ID"]),
+                on="Customer ID",
+                how="left"
+            )
+
+    return customer_summary
+
+
+def build_data_validation_report(validation_results, cleaning_steps=None):
+    """Create one auditable validation report for the team outputs."""
+
+    validation = (
+        validation_results.copy()
+        if validation_results is not None
+        else pd.DataFrame(columns=["Check", "Status", "Count", "Details"])
+    )
+
+    validation["Stage"] = "Pre-Cleaning Validation"
+    validation["QualityScore"] = calculate_data_quality_score(validation)
+
+    if cleaning_steps is None or cleaning_steps.empty:
+        return validation
+
+    cleaning = cleaning_steps.copy()
+    cleaning_report = pd.DataFrame({
+        "Check": cleaning["Step"].astype(str),
+        "Status": "INFO",
+        "Count": cleaning["Rows Removed"],
+        "Details": cleaning["Action"].astype(str),
+        "Stage": "Cleaning Audit",
+        "QualityScore": calculate_data_quality_score(validation),
+    })
+
+    return pd.concat(
+        [validation, cleaning_report],
+        ignore_index=True
+    )
+
+
+def compute_market_basket(
+    cleaned_df,
+    min_support=0.002,
+    min_confidence=0.15,
+    min_lift=1.0,
+    top_n_products=150,
+):
+    """Calculate association rules at invoice level with useful diagnostics."""
+
+    diagnostics = {
+        "status": "Not run",
+        "input_rows": 0,
+        "eligible_rows": 0,
+        "eligible_invoices": 0,
+        "products_analysed": 0,
+        "frequent_itemsets": 0,
+        "rules_before_lift": 0,
+        "rules_after_lift": 0,
+    }
+
+    if not MLXTEND_AVAILABLE:
+        diagnostics["status"] = "mlxtend is not installed"
+        return pd.DataFrame(), diagnostics
+
+    sales = completed_sales_view(cleaned_df)
+    diagnostics["input_rows"] = 0 if cleaned_df is None else len(cleaned_df)
+
+    if sales.empty:
+        diagnostics["status"] = "No completed sales available"
+        return pd.DataFrame(), diagnostics
+
+    required = {"Invoice", "Description", "Quantity"}
+    if not required.issubset(sales.columns):
+        diagnostics["status"] = "Required product fields are missing"
+        return pd.DataFrame(), diagnostics
+
+    sales = sales.dropna(subset=["Invoice", "Description"]).copy()
+    sales["Description"] = sales["Description"].astype(str).str.strip()
+
+    # Remove common non-merchandise / administrative stock codes when present.
+    if "StockCode" in sales.columns:
+        stock = sales["StockCode"].astype(str).str.upper().str.strip()
+        admin_mask = stock.str.match(
+            r"^(POST|DOT|M|D|BANK CHARGES|AMAZONFEE|S|CRUK)$",
+            na=False
+        )
+        sales = sales.loc[~admin_mask].copy()
+
+    diagnostics["eligible_rows"] = len(sales)
+    diagnostics["eligible_invoices"] = int(sales["Invoice"].nunique())
+
+    if diagnostics["eligible_invoices"] < 2:
+        diagnostics["status"] = "Too few invoices for association analysis"
+        return pd.DataFrame(), diagnostics
+
+    top_products = (
+        sales.groupby("Description")["Quantity"]
+        .sum()
+        .sort_values(ascending=False)
+        .head(int(top_n_products))
+        .index
+    )
+    sales = sales.loc[sales["Description"].isin(top_products)].copy()
+    diagnostics["products_analysed"] = int(sales["Description"].nunique())
+
+    try:
+        basket = (
+            sales.groupby(["Invoice", "Description"])["Quantity"]
+            .sum()
+            .unstack(fill_value=0)
+            .gt(0)
+        )
+
+        frequent_itemsets = apriori(
+            basket,
+            min_support=float(min_support),
+            use_colnames=True
+        )
+        diagnostics["frequent_itemsets"] = len(frequent_itemsets)
+
+        if frequent_itemsets.empty:
+            diagnostics["status"] = "No frequent itemsets at the selected support"
+            return pd.DataFrame(), diagnostics
+
+        rules = association_rules(
+            frequent_itemsets,
+            metric="confidence",
+            min_threshold=float(min_confidence)
+        )
+        diagnostics["rules_before_lift"] = len(rules)
+
+        rules = rules.loc[rules["lift"] >= float(min_lift)].copy()
+        diagnostics["rules_after_lift"] = len(rules)
+
+        if rules.empty:
+            diagnostics["status"] = "No rules meet the selected confidence/lift thresholds"
+            return pd.DataFrame(), diagnostics
+
+        rules["Antecedents"] = rules["antecedents"].apply(
+            lambda items: ", ".join(sorted(map(str, items)))
+        )
+        rules["Consequents"] = rules["consequents"].apply(
+            lambda items: ", ".join(sorted(map(str, items)))
+        )
+
+        output = (
+            rules[[
+                "Antecedents",
+                "Consequents",
+                "support",
+                "confidence",
+                "lift",
+            ]]
+            .sort_values(
+                ["lift", "confidence", "support"],
+                ascending=False
+            )
+            .reset_index(drop=True)
+        )
+        diagnostics["status"] = "Success"
+        return output, diagnostics
+
+    except Exception as exc:
+        diagnostics["status"] = f"Analysis error: {exc}"
+        return pd.DataFrame(), diagnostics
 
 
 # ============================================================
@@ -2228,451 +2835,190 @@ def validate_dataset(
 def clean_dataset(
     df
 ):
+    """
+    Clean and standardise transaction data while preserving cancellations.
 
-    raw_df = (
-        df.copy()
-    )
+    The returned clean transaction dataset keeps cancellation/return records
+    for audit and cancellation reporting.  The IsCompletedSale flag identifies
+    rows that are eligible for revenue, RFM, product, MBA and model analytics.
+    """
 
+    raw_df = df.copy()
     summary_rows = []
-
-    starting_rows = (
-        len(
-            raw_df
-        )
-    )
+    starting_rows = len(raw_df)
 
     summary_rows.append({
-
-        "Step":
-            "Raw dataset",
-
-        "Rows Before":
-            starting_rows,
-
-        "Rows Removed":
-            0,
-
-        "Rows After":
-            starting_rows,
-
-        "Action":
-            "Preserved source data before cleaning."
+        "Step": "Raw dataset",
+        "Rows Before": starting_rows,
+        "Rows Removed": 0,
+        "Rows After": starting_rows,
+        "Action": "Preserved source data before cleaning."
     })
 
-    # Exact duplicates
-    before_duplicates = (
-        len(
-            raw_df
-        )
-    )
-
-    prepared_df = (
-        raw_df
-        .drop_duplicates()
-        .copy()
-    )
-
-    after_duplicates = (
-        len(
-            prepared_df
-        )
-    )
-
-    duplicates_removed = (
-        before_duplicates
-        -
-        after_duplicates
-    )
+    # 1. Remove only exact duplicate records.
+    before_duplicates = len(raw_df)
+    prepared_df = raw_df.drop_duplicates().copy()
+    after_duplicates = len(prepared_df)
+    duplicates_removed = before_duplicates - after_duplicates
 
     summary_rows.append({
-
-        "Step":
-            "Exact duplicate removal",
-
-        "Rows Before":
-            before_duplicates,
-
-        "Rows Removed":
-            duplicates_removed,
-
-        "Rows After":
-            after_duplicates,
-
-        "Action":
-            "Removed only completely identical rows."
+        "Step": "Exact duplicate removal",
+        "Rows Before": before_duplicates,
+        "Rows Removed": duplicates_removed,
+        "Rows After": after_duplicates,
+        "Action": "Removed only completely identical transaction rows."
     })
 
-    # Standardise text
-    for column in [
-        "Invoice",
-        "StockCode",
-        "Country"
-    ]:
+    # 2. Standardise text fields without changing business meaning.
+    for column in ["Invoice", "StockCode", "Country"]:
+        prepared_df[column] = prepared_df[column].astype(str).str.strip()
 
-        prepared_df[
-            column
-        ] = (
-            prepared_df[
-                column
-            ]
-            .astype(
-                str
-            )
-            .str.strip()
-        )
-
-    prepared_df[
-        "Description"
-    ] = (
-        prepared_df[
-            "Description"
-        ]
-        .astype(
-            "string"
-        )
+    prepared_df["Description"] = (
+        prepared_df["Description"]
+        .astype("string")
         .str.strip()
     )
 
-    # Types
-    prepared_df[
-        "InvoiceDate"
-    ] = pd.to_datetime(
-        prepared_df[
-            "InvoiceDate"
-        ],
+    # 3. Convert analytical fields to consistent data types.
+    prepared_df["InvoiceDate"] = pd.to_datetime(
+        prepared_df["InvoiceDate"],
         errors="coerce"
     )
-
-    prepared_df[
-        "Quantity"
-    ] = pd.to_numeric(
-        prepared_df[
-            "Quantity"
-        ],
+    prepared_df["Quantity"] = pd.to_numeric(
+        prepared_df["Quantity"],
         errors="coerce"
     )
-
-    prepared_df[
-        "Price"
-    ] = pd.to_numeric(
-        prepared_df[
-            "Price"
-        ],
+    prepared_df["Price"] = pd.to_numeric(
+        prepared_df["Price"],
         errors="coerce"
     )
-
-    prepared_df[
-        "Customer ID"
-    ] = pd.to_numeric(
-        prepared_df[
-            "Customer ID"
-        ],
+    prepared_df["Customer ID"] = pd.to_numeric(
+        prepared_df["Customer ID"],
         errors="coerce"
     )
 
     summary_rows.append({
-
-        "Step":
-            "Type and format standardisation",
-
-        "Rows Before":
-            len(
-                prepared_df
-            ),
-
-        "Rows Removed":
-            0,
-
-        "Rows After":
-            len(
-                prepared_df
-            ),
-
-        "Action":
-            (
-                "Standardised text fields and converted "
-                "date and numeric fields to consistent types."
-            )
+        "Step": "Type and format standardisation",
+        "Rows Before": len(prepared_df),
+        "Rows Removed": 0,
+        "Rows After": len(prepared_df),
+        "Action": "Standardised identifiers/text and converted date/numeric fields."
     })
 
-    # Cancellation identification
-    prepared_df[
-        "IsCancellation"
-    ] = (
-        prepared_df[
-            "Invoice"
-        ]
+    # 4. Preserve cancellations/returns as explicit governed records.
+    prepared_df["IsCancellation"] = (
+        prepared_df["Invoice"]
         .str.upper()
-        .str.startswith(
-            "C"
-        )
+        .str.startswith("C")
     )
-
-    cancellation_count = int(
-        prepared_df[
-            "IsCancellation"
-        ]
-        .sum()
-    )
+    cancellation_count = int(prepared_df["IsCancellation"].sum())
 
     summary_rows.append({
-
-        "Step":
-            "Cancellation identification",
-
-        "Rows Before":
-            len(
-                prepared_df
-            ),
-
-        "Rows Removed":
-            0,
-
-        "Rows After":
-            len(
-                prepared_df
-            ),
-
-        "Action":
-            (
-                f"Flagged {cancellation_count:,} cancellation "
-                "records using invoice identifiers beginning with C."
-            )
+        "Step": "Cancellation identification",
+        "Rows Before": len(prepared_df),
+        "Rows Removed": 0,
+        "Rows After": len(prepared_df),
+        "Action": (
+            f"Flagged and preserved {cancellation_count:,} cancellation/return rows; "
+            "they remain available for cancellation reporting."
+        )
     })
 
-    # Qualifying positive sales
-    before_sales_filter = (
-        len(
-            prepared_df
-        )
+    # 5. Remove only records that cannot be interpreted as transactions at all.
+    before_invalid = len(prepared_df)
+    valid_core_mask = (
+        prepared_df["InvoiceDate"].notna()
+        & prepared_df["Quantity"].notna()
+        & prepared_df["Price"].notna()
     )
-
-    qualifying_mask = (
-
-        ~prepared_df[
-            "IsCancellation"
-        ]
-
-        &
-
-        (
-            prepared_df[
-                "Quantity"
-            ]
-            > 0
-        )
-
-        &
-
-        (
-            prepared_df[
-                "Price"
-            ]
-            > 0
-        )
-
-        &
-
-        prepared_df[
-            "InvoiceDate"
-        ].notna()
-    )
-
-    transaction_df = (
-        prepared_df
-        .loc[
-            qualifying_mask
-        ]
-        .copy()
-    )
-
-    after_sales_filter = (
-        len(
-            transaction_df
-        )
-    )
-
-    non_qualifying_removed = (
-        before_sales_filter
-        -
-        after_sales_filter
-    )
+    cleaned_df = prepared_df.loc[valid_core_mask].copy()
+    invalid_removed = before_invalid - len(cleaned_df)
 
     summary_rows.append({
-
-        "Step":
-            "Qualifying sales filter",
-
-        "Rows Before":
-            before_sales_filter,
-
-        "Rows Removed":
-            non_qualifying_removed,
-
-        "Rows After":
-            after_sales_filter,
-
-        "Action":
-            (
-                "Retained non-cancellation records with "
-                "Quantity > 0, Price > 0 and a valid InvoiceDate."
-            )
+        "Step": "Invalid core field removal",
+        "Rows Before": before_invalid,
+        "Rows Removed": invalid_removed,
+        "Rows After": len(cleaned_df),
+        "Action": (
+            "Removed only rows with unusable InvoiceDate, Quantity or Price values. "
+            "Valid cancellations and returns were retained."
+        )
     })
 
-    # Revenue
-    transaction_df[
-        "Revenue"
-    ] = (
-        transaction_df[
-            "Quantity"
-        ]
-        *
-        transaction_df[
-            "Price"
-        ]
+    # 6. Add line value and analytical eligibility flags.
+    cleaned_df["Revenue"] = (
+        cleaned_df["Quantity"]
+        * cleaned_df["Price"]
     )
 
-    # Calendar fields
-    transaction_df[
-        "Year"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.year
+    cleaned_df["IsCompletedSale"] = (
+        ~cleaned_df["IsCancellation"]
+        & cleaned_df["Quantity"].gt(0)
+        & cleaned_df["Price"].gt(0)
     )
 
-    transaction_df[
-        "Month"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.month
-    )
+    cleaned_df["TransactionType"] = "Other / Adjustment"
+    cleaned_df.loc[
+        cleaned_df["IsCancellation"],
+        "TransactionType"
+    ] = "Cancellation / Return"
+    cleaned_df.loc[
+        cleaned_df["IsCompletedSale"],
+        "TransactionType"
+    ] = "Completed Sale"
 
-    transaction_df[
-        "MonthName"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.month_name()
-    )
+    # Calendar fields support Power BI and Streamlit reporting.
+    cleaned_df["Year"] = cleaned_df["InvoiceDate"].dt.year
+    cleaned_df["Month"] = cleaned_df["InvoiceDate"].dt.month
+    cleaned_df["MonthName"] = cleaned_df["InvoiceDate"].dt.month_name()
+    cleaned_df["Quarter"] = cleaned_df["InvoiceDate"].dt.quarter
+    cleaned_df["Day"] = cleaned_df["InvoiceDate"].dt.day
+    cleaned_df["DayOfWeek"] = cleaned_df["InvoiceDate"].dt.day_name()
+    cleaned_df["Hour"] = cleaned_df["InvoiceDate"].dt.hour
 
-    transaction_df[
-        "Quarter"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.quarter
-    )
+    completed_sales_rows = int(cleaned_df["IsCompletedSale"].sum())
+    cancellation_rows = int(cleaned_df["IsCancellation"].sum())
+    non_analytical_rows = int((~cleaned_df["IsCompletedSale"]).sum())
 
-    transaction_df[
-        "Day"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.day
-    )
-
-    transaction_df[
-        "DayOfWeek"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.day_name()
-    )
-
-    transaction_df[
-        "Hour"
-    ] = (
-        transaction_df[
-            "InvoiceDate"
-        ]
-        .dt.hour
-    )
-
-    final_rows = (
-        len(
-            transaction_df
+    summary_rows.append({
+        "Step": "Analytical eligibility",
+        "Rows Before": len(cleaned_df),
+        "Rows Removed": 0,
+        "Rows After": len(cleaned_df),
+        "Action": (
+            f"Flagged {completed_sales_rows:,} completed-sale rows for revenue/RFM/product "
+            f"analysis while preserving {non_analytical_rows:,} non-sale rows."
         )
-    )
+    })
 
-    total_removed = (
-        starting_rows
-        -
-        final_rows
-    )
-
+    final_rows = len(cleaned_df)
+    total_removed = starting_rows - final_rows
     retained_percentage = (
-
-        (
-            final_rows
-            /
-            starting_rows
-        )
-        *
-        100
-
+        (final_rows / starting_rows) * 100
         if starting_rows > 0
-
         else 0
     )
-
-    missing_customer_ids = int(
-        transaction_df[
-            "Customer ID"
-        ]
-        .isna()
-        .sum()
-    )
+    missing_customer_ids = int(cleaned_df["Customer ID"].isna().sum())
 
     final_summary = {
-
-        "starting_rows":
-            starting_rows,
-
-        "prepared_rows":
-            len(
-                prepared_df
-            ),
-
-        "duplicates_removed":
-            duplicates_removed,
-
-        "cancellations_identified":
-            cancellation_count,
-
-        "non_qualifying_removed":
-            non_qualifying_removed,
-
-        "final_rows":
-            final_rows,
-
-        "total_removed":
-            total_removed,
-
-        "retained_percentage":
-            retained_percentage,
-
-        "missing_customer_ids":
-            missing_customer_ids,
-
-        "final_columns":
-            len(
-                transaction_df.columns
-            )
+        "starting_rows": starting_rows,
+        "prepared_rows": len(prepared_df),
+        "duplicates_removed": duplicates_removed,
+        "cancellations_identified": cancellation_count,
+        "invalid_core_rows_removed": invalid_removed,
+        "completed_sales_rows": completed_sales_rows,
+        "cancellation_rows": cancellation_rows,
+        "non_analytical_rows": non_analytical_rows,
+        "final_rows": final_rows,
+        "total_removed": total_removed,
+        "retained_percentage": retained_percentage,
+        "missing_customer_ids": missing_customer_ids,
+        "final_columns": len(cleaned_df.columns),
     }
 
     return (
-        transaction_df,
-        pd.DataFrame(
-            summary_rows
-        ),
+        cleaned_df,
+        pd.DataFrame(summary_rows),
         final_summary
     )
 
@@ -2734,8 +3080,14 @@ def build_rfm_features(
             )
         )
 
-    rfm_df = (
+    # RFM must use completed positive sales only.  Cancellation rows remain
+    # available in the clean transaction layer but are deliberately excluded here.
+    analytical_sales = completed_sales_view(
         cleaned_df
+    )
+
+    rfm_df = (
+        analytical_sales
         .dropna(
             subset=[
                 "Customer ID"
@@ -3300,528 +3652,244 @@ def publish_pipeline_outputs(
     cleaned_df,
     rfm_df,
     source_filename,
-    username
+    username,
+    validation_results=None,
+    cleaning_steps=None,
 ):
+    """
+    Publish the governed application outputs.
 
-    publication_time = (
-        datetime.now()
-    )
+    Existing RFM/model files remain available for backwards compatibility,
+    while the seven team deliverables are also written from one controlled
+    publication event so Streamlit and Power BI can use the same definitions.
+    """
 
-    timestamp = (
-        publication_time
-        .strftime(
-            "%Y%m%d_%H%M%S_%f"
-        )
-    )
+    publication_time = datetime.now()
+    timestamp = publication_time.strftime("%Y%m%d_%H%M%S_%f")
+    publication_version = f"PUB_{timestamp}"
+    publication_display_time = publication_time.strftime("%Y-%m-%d %H:%M:%S")
 
-    publication_version = (
-        f"PUB_{timestamp}"
-    )
+    reporting_df, high_value_threshold = build_reporting_dataset(rfm_df)
 
-    publication_display_time = (
-        publication_time
-        .strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-    )
-
-    (
-        reporting_df,
-        high_value_threshold
-
-    ) = build_reporting_dataset(
-        rfm_df
-    )
-
-    cv_source = (
-        MODEL_ARTIFACT_DIR
-        /
-        "model_cv_results.csv"
-    )
-
-    temporal_source = (
-        MODEL_ARTIFACT_DIR
-        /
-        "temporal_test_predictions.csv"
-    )
+    cv_source = MODEL_ARTIFACT_DIR / "model_cv_results.csv"
+    temporal_source = MODEL_ARTIFACT_DIR / "temporal_test_predictions.csv"
 
     if not cv_source.exists():
-
         raise FileNotFoundError(
-            f"Approved model artifact not found: "
-            f"{cv_source}"
+            f"Approved model artifact not found: {cv_source}"
         )
 
     if not temporal_source.exists():
-
         raise FileNotFoundError(
-            f"Approved temporal prediction artifact not found: "
-            f"{temporal_source}"
+            f"Approved temporal prediction artifact not found: {temporal_source}"
         )
 
-    model_cv_df = pd.read_csv(
-        cv_source
-    )
+    model_cv_df = pd.read_csv(cv_source)
+    temporal_df = pd.read_csv(temporal_source)
 
-    temporal_df = pd.read_csv(
-        temporal_source
-    )
-
-    # Verify predictive label polarity
+    # Verify predictive label polarity before anything is published.
     required_prediction_columns = {
         "PredictedRetentionRisk",
         "PredictedRiskLevel"
     }
 
-    if required_prediction_columns.issubset(
-        temporal_df.columns
-    ):
-
+    if required_prediction_columns.issubset(temporal_df.columns):
         invalid_mapping = temporal_df.loc[
             (
-                (
-                    temporal_df[
-                        "PredictedRetentionRisk"
-                    ]
-                    == 1
-                )
-                &
-                (
-                    temporal_df[
-                        "PredictedRiskLevel"
-                    ]
-                    != "At Risk"
-                )
+                temporal_df["PredictedRetentionRisk"].eq(1)
+                & temporal_df["PredictedRiskLevel"].ne("At Risk")
             )
             |
             (
-                (
-                    temporal_df[
-                        "PredictedRetentionRisk"
-                    ]
-                    == 0
-                )
-                &
-                (
-                    temporal_df[
-                        "PredictedRiskLevel"
-                    ]
-                    != "Retained"
-                )
+                temporal_df["PredictedRetentionRisk"].eq(0)
+                & temporal_df["PredictedRiskLevel"].ne("Retained")
             )
         ]
 
-        if len(
-            invalid_mapping
-        ) > 0:
-
+        if not invalid_mapping.empty:
             raise ValueError(
                 "Predictive label mapping failed: "
                 "1 must mean At Risk and 0 must mean Retained."
             )
 
-    # Archive paths
-    clean_archive_path = (
-        ARCHIVE_DIR
-        /
-        f"clean_transactions_{timestamp}.csv"
+    # Build the seven team deliverables from the same approved publication.
+    invoice_summary_df = build_invoice_summary(cleaned_df)
+    rfm_customer_features_df = build_rfm_customer_features(
+        cleaned_df,
+        rfm_df
+    )
+    final_customer_risk_prediction_df = temporal_df.copy()
+    customer_summary_df = build_customer_summary(
+        reporting_df,
+        rfm_customer_features_df,
+        final_customer_risk_prediction_df
+    )
+    validation_report_df = build_data_validation_report(
+        validation_results,
+        cleaning_steps
     )
 
-    rfm_archive_path = (
-        ARCHIVE_DIR
-        /
-        f"rfm_analysis_dataset_{timestamp}.csv"
-    )
+    team_outputs = {
+        "clean_transactions": cleaned_df,
+        "customer_rfm": rfm_df,
+        "customer_summary": customer_summary_df,
+        "data_validation_report": validation_report_df,
+        "final_customer_risk_prediction": final_customer_risk_prediction_df,
+        "invoice_summary": invoice_summary_df,
+        "rfm_customer_features": rfm_customer_features_df,
+    }
 
-    cv_archive_path = (
-        ARCHIVE_DIR
-        /
-        f"model_cv_results_{timestamp}.csv"
-    )
+    team_paths = {}
+    team_archive_paths = {}
 
-    temporal_archive_path = (
-        ARCHIVE_DIR
-        /
-        f"temporal_test_predictions_{timestamp}.csv"
-    )
+    for output_name, output_df in team_outputs.items():
+        latest_path = TEAM_OUTPUT_DIR / f"{output_name}.csv"
+        archive_path = ARCHIVE_DIR / f"{output_name}_{timestamp}.csv"
+        output_df.to_csv(latest_path, index=False)
+        output_df.to_csv(archive_path, index=False)
+        team_paths[output_name] = latest_path
+        team_archive_paths[output_name] = archive_path
 
-    # Stable latest paths
-    latest_clean_path = (
-        PUBLISH_DIR
-        /
-        "latest_clean_transactions.csv"
-    )
+    # Existing stable / archive outputs retained for backwards compatibility.
+    clean_archive_path = ARCHIVE_DIR / f"clean_transactions_{timestamp}.csv"
+    rfm_archive_path = ARCHIVE_DIR / f"rfm_analysis_dataset_{timestamp}.csv"
+    cv_archive_path = ARCHIVE_DIR / f"model_cv_results_{timestamp}.csv"
+    temporal_archive_path = ARCHIVE_DIR / f"temporal_test_predictions_{timestamp}.csv"
 
-    latest_rfm_path = (
-        PUBLISH_DIR
-        /
-        "latest_rfm_analysis_dataset.csv"
-    )
+    latest_clean_path = PUBLISH_DIR / "latest_clean_transactions.csv"
+    latest_rfm_path = PUBLISH_DIR / "latest_rfm_analysis_dataset.csv"
+    latest_cv_path = PUBLISH_DIR / "latest_model_cv_results.csv"
+    latest_temporal_path = PUBLISH_DIR / "latest_temporal_test_predictions.csv"
 
-    latest_cv_path = (
-        PUBLISH_DIR
-        /
-        "latest_model_cv_results.csv"
-    )
+    power_bi_rfm_path = POWER_BI_DIR / "rfm_analysis_dataset.csv"
+    power_bi_cv_path = POWER_BI_DIR / "model_cv_results.csv"
+    power_bi_temporal_path = POWER_BI_DIR / "temporal_test_predictions.csv"
 
-    latest_temporal_path = (
-        PUBLISH_DIR
-        /
-        "latest_temporal_test_predictions.csv"
-    )
+    # Recommended Power BI business contract: customer, transaction and invoice grain.
+    power_bi_customer_summary_path = POWER_BI_DIR / "customer_summary.csv"
+    power_bi_clean_transactions_path = POWER_BI_DIR / "clean_transactions.csv"
+    power_bi_invoice_summary_path = POWER_BI_DIR / "invoice_summary.csv"
 
-    # Stable Power BI contract
-    power_bi_rfm_path = (
-        POWER_BI_DIR
-        /
-        "rfm_analysis_dataset.csv"
-    )
+    manifest_path = PUBLISH_DIR / "publication_manifest.csv"
 
-    power_bi_cv_path = (
-        POWER_BI_DIR
-        /
-        "model_cv_results.csv"
-    )
+    cleaned_df.to_csv(clean_archive_path, index=False)
+    reporting_df.to_csv(rfm_archive_path, index=False)
+    model_cv_df.to_csv(cv_archive_path, index=False)
+    temporal_df.to_csv(temporal_archive_path, index=False)
 
-    power_bi_temporal_path = (
-        POWER_BI_DIR
-        /
-        "temporal_test_predictions.csv"
-    )
+    cleaned_df.to_csv(latest_clean_path, index=False)
+    reporting_df.to_csv(latest_rfm_path, index=False)
+    model_cv_df.to_csv(latest_cv_path, index=False)
+    temporal_df.to_csv(latest_temporal_path, index=False)
 
-    manifest_path = (
-        PUBLISH_DIR
-        /
-        "publication_manifest.csv"
-    )
+    reporting_df.to_csv(power_bi_rfm_path, index=False)
+    model_cv_df.to_csv(power_bi_cv_path, index=False)
+    temporal_df.to_csv(power_bi_temporal_path, index=False)
+    customer_summary_df.to_csv(power_bi_customer_summary_path, index=False)
+    cleaned_df.to_csv(power_bi_clean_transactions_path, index=False)
+    invoice_summary_df.to_csv(power_bi_invoice_summary_path, index=False)
 
-    # Archive outputs
-    cleaned_df.to_csv(
-        clean_archive_path,
-        index=False
-    )
-
-    reporting_df.to_csv(
-        rfm_archive_path,
-        index=False
-    )
-
-    model_cv_df.to_csv(
-        cv_archive_path,
-        index=False
-    )
-
-    temporal_df.to_csv(
-        temporal_archive_path,
-        index=False
-    )
-
-    # Latest outputs
-    cleaned_df.to_csv(
-        latest_clean_path,
-        index=False
-    )
-
-    reporting_df.to_csv(
-        latest_rfm_path,
-        index=False
-    )
-
-    model_cv_df.to_csv(
-        latest_cv_path,
-        index=False
-    )
-
-    temporal_df.to_csv(
-        latest_temporal_path,
-        index=False
-    )
-
-    # Power BI handoff
-    reporting_df.to_csv(
-        power_bi_rfm_path,
-        index=False
-    )
-
-    model_cv_df.to_csv(
-        power_bi_cv_path,
-        index=False
-    )
-
-    temporal_df.to_csv(
-        power_bi_temporal_path,
-        index=False
-    )
-
-    high_value_customers = int(
-        reporting_df[
-            "HighValue"
-        ]
-        .sum()
-    )
-
+    high_value_customers = int(reporting_df["HighValue"].sum())
     high_value_at_risk = int(
-        (
-            reporting_df[
-                "HighValue"
-            ]
-            &
-            reporting_df[
-                "AtRisk60"
-            ]
-        )
-        .sum()
+        (reporting_df["HighValue"] & reporting_df["AtRisk60"]).sum()
     )
 
     priority_counts = (
-        reporting_df[
-            "Priority"
-        ]
+        reporting_df["Priority"]
         .value_counts()
-        .rename_axis(
-            "Priority"
-        )
-        .reset_index(
-            name="Customers"
-        )
+        .rename_axis("Priority")
+        .reset_index(name="Customers")
     )
 
     predicted_counts = (
-        temporal_df[
-            "PredictedRiskLevel"
-        ]
+        temporal_df["PredictedRiskLevel"]
         .value_counts()
-        .rename_axis(
-            "PredictedRiskLevel"
-        )
-        .reset_index(
-            name="Customers"
-        )
+        .rename_axis("PredictedRiskLevel")
+        .reset_index(name="Customers")
+        if "PredictedRiskLevel" in temporal_df.columns
+        else pd.DataFrame(columns=["PredictedRiskLevel", "Customers"])
     )
 
     predicted_at_risk = int(
-        (
-            temporal_df[
-                "PredictedRiskLevel"
-            ]
-            == "At Risk"
-        )
-        .sum()
-    )
+        temporal_df["PredictedRiskLevel"].eq("At Risk").sum()
+    ) if "PredictedRiskLevel" in temporal_df.columns else 0
 
     predicted_retained = int(
-        (
-            temporal_df[
-                "PredictedRiskLevel"
-            ]
-            == "Retained"
-        )
-        .sum()
-    )
+        temporal_df["PredictedRiskLevel"].eq("Retained").sum()
+    ) if "PredictedRiskLevel" in temporal_df.columns else 0
 
     manifest_record = pd.DataFrame({
-
-        "PublicationTimestamp": [
-            publication_display_time
-        ],
-
-        "PublicationVersion": [
-            publication_version
-        ],
-
-        "PublishedBy": [
-            username
-        ],
-
-        "SourceFile": [
-            source_filename
-        ],
-
-        "CleanRows": [
-            len(
-                cleaned_df
-            )
-        ],
-
-        "RFMRows": [
-            len(
-                reporting_df
-            )
-        ],
-
-        "RFMColumns": [
-            len(
-                reporting_df.columns
-            )
-        ],
-
-        "HighValueThreshold": [
-            high_value_threshold
-        ],
-
-        "HighValueAtRisk": [
-            high_value_at_risk
-        ],
-
-        "ModelCVRows": [
-            len(
-                model_cv_df
-            )
-        ],
-
-        "TemporalPredictionRows": [
-            len(
-                temporal_df
-            )
-        ],
-
-        "PredictedAtRisk": [
-            predicted_at_risk
-        ],
-
-        "PredictedRetained": [
-            predicted_retained
-        ],
-
-        "PowerBIRFMFile": [
-            power_bi_rfm_path.name
-        ],
-
-        "PowerBICVFile": [
-            power_bi_cv_path.name
-        ],
-
-        "PowerBITemporalFile": [
-            power_bi_temporal_path.name
-        ]
+        "PublicationTimestamp": [publication_display_time],
+        "PublicationVersion": [publication_version],
+        "PublishedBy": [username],
+        "SourceFile": [source_filename],
+        "CleanRows": [len(cleaned_df)],
+        "RFMRows": [len(reporting_df)],
+        "RFMColumns": [len(reporting_df.columns)],
+        "HighValueThreshold": [high_value_threshold],
+        "HighValueAtRisk": [high_value_at_risk],
+        "ModelCVRows": [len(model_cv_df)],
+        "TemporalPredictionRows": [len(temporal_df)],
+        "PredictedAtRisk": [predicted_at_risk],
+        "PredictedRetained": [predicted_retained],
+        "DataQualityScore": [calculate_data_quality_score(validation_results)],
+        "PowerBIRFMFile": [power_bi_rfm_path.name],
+        "PowerBICVFile": [power_bi_cv_path.name],
+        "PowerBITemporalFile": [power_bi_temporal_path.name],
+        "PowerBICustomerSummaryFile": [power_bi_customer_summary_path.name],
+        "PowerBICleanTransactionsFile": [power_bi_clean_transactions_path.name],
+        "PowerBIInvoiceSummaryFile": [power_bi_invoice_summary_path.name],
     })
 
     if manifest_path.exists():
-
-        existing_manifest = pd.read_csv(
-            manifest_path
-        )
-
+        existing_manifest = pd.read_csv(manifest_path)
         publication_manifest = pd.concat(
-            [
-                existing_manifest,
-                manifest_record
-            ],
+            [existing_manifest, manifest_record],
             ignore_index=True
         )
-
     else:
+        publication_manifest = manifest_record.copy()
 
-        publication_manifest = (
-            manifest_record.copy()
-        )
-
-    publication_manifest.to_csv(
-        manifest_path,
-        index=False
-    )
+    publication_manifest.to_csv(manifest_path, index=False)
 
     publication_summary = {
-
-        "publication_time":
-            publication_display_time,
-
-        "publication_version":
-            publication_version,
-
-        "published_by":
-            username,
-
-        "source_filename":
-            source_filename,
-
-        "clean_rows":
-            len(
-                cleaned_df
-            ),
-
-        "rfm_rows":
-            len(
-                reporting_df
-            ),
-
-        "rfm_columns":
-            len(
-                reporting_df.columns
-            ),
-
-        "high_value_threshold":
-            high_value_threshold,
-
-        "high_value_customers":
-            high_value_customers,
-
-        "high_value_at_risk":
-            high_value_at_risk,
-
-        "priority_counts":
-            priority_counts,
-
-        "model_cv_rows":
-            len(
-                model_cv_df
-            ),
-
-        "temporal_rows":
-            len(
-                temporal_df
-            ),
-
-        "predicted_at_risk":
-            predicted_at_risk,
-
-        "predicted_retained":
-            predicted_retained,
-
-        "predicted_counts":
-            predicted_counts,
-
-        "clean_archive_path":
-            clean_archive_path,
-
-        "rfm_archive_path":
-            rfm_archive_path,
-
-        "cv_archive_path":
-            cv_archive_path,
-
-        "temporal_archive_path":
-            temporal_archive_path,
-
-        "latest_clean_path":
-            latest_clean_path,
-
-        "latest_rfm_path":
-            latest_rfm_path,
-
-        "latest_cv_path":
-            latest_cv_path,
-
-        "latest_temporal_path":
-            latest_temporal_path,
-
-        "power_bi_rfm_path":
-            power_bi_rfm_path,
-
-        "power_bi_cv_path":
-            power_bi_cv_path,
-
-        "power_bi_temporal_path":
-            power_bi_temporal_path,
-
-        "manifest_path":
-            manifest_path
+        "publication_time": publication_display_time,
+        "publication_version": publication_version,
+        "published_by": username,
+        "source_filename": source_filename,
+        "clean_rows": len(cleaned_df),
+        "rfm_rows": len(reporting_df),
+        "rfm_columns": len(reporting_df.columns),
+        "high_value_threshold": high_value_threshold,
+        "high_value_customers": high_value_customers,
+        "high_value_at_risk": high_value_at_risk,
+        "priority_counts": priority_counts,
+        "model_cv_rows": len(model_cv_df),
+        "temporal_rows": len(temporal_df),
+        "predicted_at_risk": predicted_at_risk,
+        "predicted_retained": predicted_retained,
+        "predicted_counts": predicted_counts,
+        "data_quality_score": calculate_data_quality_score(validation_results),
+        "clean_archive_path": clean_archive_path,
+        "rfm_archive_path": rfm_archive_path,
+        "cv_archive_path": cv_archive_path,
+        "temporal_archive_path": temporal_archive_path,
+        "latest_clean_path": latest_clean_path,
+        "latest_rfm_path": latest_rfm_path,
+        "latest_cv_path": latest_cv_path,
+        "latest_temporal_path": latest_temporal_path,
+        "power_bi_rfm_path": power_bi_rfm_path,
+        "power_bi_cv_path": power_bi_cv_path,
+        "power_bi_temporal_path": power_bi_temporal_path,
+        "power_bi_customer_summary_path": power_bi_customer_summary_path,
+        "power_bi_clean_transactions_path": power_bi_clean_transactions_path,
+        "power_bi_invoice_summary_path": power_bi_invoice_summary_path,
+        "team_paths": team_paths,
+        "team_archive_paths": team_archive_paths,
+        "manifest_path": manifest_path,
     }
 
-    return (
-        reporting_df,
-        publication_summary
-    )
+    return reporting_df, publication_summary
 
 
 # ============================================================
@@ -4026,13 +4094,37 @@ if user_role == TECHNICAL_ROLE:
                         st.multiselect(
                             "Select the sheet(s) to ingest",
                             options=sheet_names,
-                            default=sheet_names
+                            default=(
+                                sheet_names
+                                if len(sheet_names) == 1
+                                else []
+                            ),
+                            help=(
+                                "For multi-sheet workbooks, select only the sheets that "
+                                "belong to the same transaction structure. They will not "
+                                "be combined until you explicitly approve the load."
+                            )
                         )
                     )
 
                     st.session_state[
                         "selected_sheets"
                     ] = selected_sheets
+
+                    if len(sheet_names) > 1:
+                        if len(selected_sheets) > 1:
+                            st.info(
+                                f"{len(selected_sheets)} sheets selected. They will be "
+                                "combined only after you approve the action below."
+                            )
+                        elif len(selected_sheets) == 1:
+                            st.info(
+                                "One sheet selected. Only that sheet will be loaded."
+                            )
+                        else:
+                            st.warning(
+                                "Select at least one sheet before continuing."
+                            )
 
                 except Exception as e:
 
@@ -4042,17 +4134,32 @@ if user_role == TECHNICAL_ROLE:
 
             st.divider()
 
+            is_excel_upload = uploaded_file.name.lower().endswith(".xlsx")
+            if is_excel_upload and selected_sheets:
+                load_label = (
+                    "Combine Selected Sheets and Continue"
+                    if len(selected_sheets) > 1
+                    else "Load Sheet and Continue"
+                )
+            else:
+                load_label = "Load Dataset"
+
+            load_disabled = bool(
+                is_excel_upload
+                and not selected_sheets
+            )
+
             if st.button(
-                "Load Dataset",
-                type="primary"
+                load_label,
+                type="primary",
+                disabled=load_disabled
             ):
 
                 try:
 
-                    with st.spinner(
-                        "Loading dataset..."
+                    with loading_overlay(
+                        "Reading the selected source data and preparing the ingestion preview."
                     ):
-
                         raw_df = (
                             load_uploaded_data(
                                 uploaded_file,
@@ -4075,6 +4182,9 @@ if user_role == TECHNICAL_ROLE:
                     # Reset downstream stages
                     st.session_state.validation_results = None
                     st.session_state.validation_complete = False
+                    st.session_state.validation_score = None
+                    st.session_state.mba_rules = None
+                    st.session_state.mba_diagnostics = None
 
                     st.session_state.cleaned_data = None
                     st.session_state.cleaning_steps = None
@@ -4254,9 +4364,18 @@ if user_role == TECHNICAL_ROLE:
 
                 try:
 
-                    validation_results = (
-                        validate_dataset(
-                            st.session_state.raw_data
+                    with loading_overlay(
+                        "Checking schema, missing values, duplicates, cancellations and field validity."
+                    ):
+                        validation_results = (
+                            validate_dataset(
+                                st.session_state.raw_data
+                            )
+                        )
+
+                    st.session_state.validation_score = (
+                        calculate_data_quality_score(
+                            validation_results
                         )
                     )
 
@@ -4389,23 +4508,32 @@ if user_role == TECHNICAL_ROLE:
                     .sum()
                 )
 
-                col1, col2, col3 = (
+                quality_score = calculate_data_quality_score(
+                    validation_results
+                )
+
+                col1, col2, col3, col4 = (
                     st.columns(
-                        3
+                        4
                     )
                 )
 
                 col1.metric(
+                    "Data Quality Score",
+                    f"{quality_score:.1f}%"
+                )
+
+                col2.metric(
                     "Passed",
                     passed
                 )
 
-                col2.metric(
+                col3.metric(
                     "Warnings",
                     warnings
                 )
 
-                col3.metric(
+                col4.metric(
                     "Failed",
                     failed
                 )
@@ -4494,14 +4622,17 @@ if user_role == TECHNICAL_ROLE:
 
                     try:
 
-                        (
-                            cleaned_df,
-                            cleaning_steps,
-                            cleaning_summary
+                        with loading_overlay(
+                            "Standardising transactions, preserving cancellations and assigning analysis flags."
+                        ):
+                            (
+                                cleaned_df,
+                                cleaning_steps,
+                                cleaning_summary
 
-                        ) = clean_dataset(
-                            st.session_state.raw_data
-                        )
+                            ) = clean_dataset(
+                                st.session_state.raw_data
+                            )
 
                         st.session_state.cleaned_data = (
                             cleaned_df
@@ -4589,12 +4720,12 @@ if user_role == TECHNICAL_ROLE:
                 st.divider()
 
                 st.subheader(
-                    "Cleaning Summary"
+                    "Detailed Cleaning Report"
                 )
 
-                col1, col2, col3, col4 = (
+                col1, col2, col3, col4, col5 = (
                     st.columns(
-                        4
+                        5
                     )
                 )
 
@@ -4609,13 +4740,24 @@ if user_role == TECHNICAL_ROLE:
                 )
 
                 col3.metric(
-                    "Final Qualifying Rows",
-                    f"{summary['final_rows']:,}"
+                    "Cancellations Preserved",
+                    f"{summary['cancellation_rows']:,}"
                 )
 
                 col4.metric(
+                    "Completed Sales",
+                    f"{summary['completed_sales_rows']:,}"
+                )
+
+                col5.metric(
                     "Rows Retained",
                     f"{summary['retained_percentage']:.2f}%"
+                )
+
+                st.caption(
+                    "Cancellations/returns remain in the clean transaction dataset. "
+                    "Only rows flagged IsCompletedSale=True feed revenue, RFM, product, "
+                    "market-basket and predictive analytical views."
                 )
 
                 st.dataframe(
@@ -4628,73 +4770,49 @@ if user_role == TECHNICAL_ROLE:
                     "Post-Cleaning Quality Checks"
                 )
 
-                post_checks = pd.DataFrame({
+                completed_sales = completed_sales_view(
+                    cleaned_df
+                )
 
+                post_checks = pd.DataFrame({
                     "Check": [
                         "Exact Duplicates",
-                        "Cancellation Transactions",
-                        "Non-positive Quantity",
-                        "Non-positive Price",
-                        "Missing Invoice Dates"
+                        "Invalid Invoice Dates",
+                        "Invalid Quantity Values",
+                        "Invalid Price Values",
+                        "Completed-Sale Rows",
+                        "Preserved Cancellation / Return Rows",
+                        "Missing Customer IDs"
                     ],
-
                     "Count": [
-
-                        int(
-                            cleaned_df
-                            .duplicated()
-                            .sum()
-                        ),
-
-                        int(
-                            cleaned_df[
-                                "IsCancellation"
-                            ]
-                            .sum()
-                        ),
-
-                        int(
-                            (
-                                cleaned_df[
-                                    "Quantity"
-                                ]
-                                <= 0
-                            )
-                            .sum()
-                        ),
-
-                        int(
-                            (
-                                cleaned_df[
-                                    "Price"
-                                ]
-                                <= 0
-                            )
-                            .sum()
-                        ),
-
-                        int(
-                            cleaned_df[
-                                "InvoiceDate"
-                            ]
-                            .isna()
-                            .sum()
-                        )
+                        int(cleaned_df.duplicated().sum()),
+                        int(cleaned_df["InvoiceDate"].isna().sum()),
+                        int(cleaned_df["Quantity"].isna().sum()),
+                        int(cleaned_df["Price"].isna().sum()),
+                        int(len(completed_sales)),
+                        int(cleaned_df["IsCancellation"].sum()),
+                        int(cleaned_df["Customer ID"].isna().sum()),
+                    ],
+                    "Interpretation": [
+                        "Should be zero after exact duplicate removal",
+                        "Should be zero after core-field cleaning",
+                        "Should be zero after core-field cleaning",
+                        "Should be zero after core-field cleaning",
+                        "Eligible for revenue/RFM/product analysis",
+                        "Retained by design for cancellation reporting",
+                        "Retained for transaction analysis but excluded from customer RFM",
                     ]
                 })
 
-                post_checks[
-                    "Status"
-                ] = post_checks[
-                    "Count"
-                ].apply(
-                    lambda value:
-                        (
-                            "PASS"
-                            if value == 0
-                            else "FAIL"
-                        )
-                )
+                post_checks["Status"] = [
+                    "PASS" if post_checks.loc[0, "Count"] == 0 else "FAIL",
+                    "PASS" if post_checks.loc[1, "Count"] == 0 else "FAIL",
+                    "PASS" if post_checks.loc[2, "Count"] == 0 else "FAIL",
+                    "PASS" if post_checks.loc[3, "Count"] == 0 else "FAIL",
+                    "INFO",
+                    "INFO",
+                    "INFO",
+                ]
 
                 st.dataframe(
                     post_checks,
@@ -4702,21 +4820,12 @@ if user_role == TECHNICAL_ROLE:
                     hide_index=True
                 )
 
-                st.caption(
-                    f"Missing Customer IDs retained for "
-                    f"transaction-level analysis: "
-                    f"{summary['missing_customer_ids']:,}. "
-                    "They are excluded only during customer-level RFM analysis."
-                )
-
                 st.subheader(
-                    "Cleaned Data Preview"
+                    "Cleaned Transaction Preview"
                 )
 
                 st.dataframe(
-                    cleaned_df.head(
-                        20
-                    ),
+                    cleaned_df.head(20),
                     use_container_width=True
                 )
 
@@ -4757,13 +4866,16 @@ if user_role == TECHNICAL_ROLE:
 
                 try:
 
-                    (
-                        rfm_df,
-                        rfm_summary
+                    with loading_overlay(
+                        "Building RFM customer features from completed sales only."
+                    ):
+                        (
+                            rfm_df,
+                            rfm_summary
 
-                    ) = build_rfm_features(
-                        st.session_state.cleaned_data
-                    )
+                        ) = build_rfm_features(
+                            st.session_state.cleaned_data
+                        )
 
                     st.session_state.rfm_data = (
                         rfm_df
@@ -5078,29 +5190,40 @@ if user_role == TECHNICAL_ROLE:
 
                     try:
 
-                        (
-                            published_rfm,
-                            publication_summary
+                        with loading_overlay(
+                            "Writing the governed team outputs and Power BI hand-off datasets."
+                        ):
+                            (
+                                published_rfm,
+                                publication_summary
 
-                        ) = publish_pipeline_outputs(
+                            ) = publish_pipeline_outputs(
 
-                            cleaned_df=(
-                                st.session_state.cleaned_data
-                            ),
+                                cleaned_df=(
+                                    st.session_state.cleaned_data
+                                ),
 
-                            rfm_df=(
-                                st.session_state.rfm_data
-                            ),
+                                rfm_df=(
+                                    st.session_state.rfm_data
+                                ),
 
-                            source_filename=(
-                                st.session_state.uploaded_filename
-                                or "Unknown"
-                            ),
+                                source_filename=(
+                                    st.session_state.uploaded_filename
+                                    or "Unknown"
+                                ),
 
-                            username=(
-                                user_name
+                                username=(
+                                    user_name
+                                ),
+
+                                validation_results=(
+                                    st.session_state.validation_results
+                                ),
+
+                                cleaning_steps=(
+                                    st.session_state.cleaning_steps
+                                )
                             )
-                        )
 
                         st.session_state.published_rfm_data = (
                             published_rfm
@@ -5254,39 +5377,26 @@ if user_role == TECHNICAL_ROLE:
                 )
 
                 published_files = pd.DataFrame({
-
                     "Output": [
-                        "Power BI RFM Dataset",
-                        "Power BI Model CV Results",
-                        "Power BI Temporal Predictions",
-                        "Publication Manifest"
+                        "Clean Transactions",
+                        "Customer RFM",
+                        "Customer Summary",
+                        "Data Validation Report",
+                        "Final Customer Risk Prediction",
+                        "Invoice Summary",
+                        "RFM Customer Features",
                     ],
-
                     "File": [
-
-                        Path(
-                            summary[
-                                "power_bi_rfm_path"
-                            ]
-                        ).name,
-
-                        Path(
-                            summary[
-                                "power_bi_cv_path"
-                            ]
-                        ).name,
-
-                        Path(
-                            summary[
-                                "power_bi_temporal_path"
-                            ]
-                        ).name,
-
-                        Path(
-                            summary[
-                                "manifest_path"
-                            ]
-                        ).name
+                        Path(summary["team_paths"][key]).name
+                        for key in [
+                            "clean_transactions",
+                            "customer_rfm",
+                            "customer_summary",
+                            "data_validation_report",
+                            "final_customer_risk_prediction",
+                            "invoice_summary",
+                            "rfm_customer_features",
+                        ]
                     ]
                 })
 
@@ -6546,8 +6656,15 @@ else:
         "latest_clean_transactions.csv"
     )
 
+    team_customer_summary_path = TEAM_OUTPUT_DIR / "customer_summary.csv"
+    team_clean_transactions_path = TEAM_OUTPUT_DIR / "clean_transactions.csv"
+    team_invoice_summary_path = TEAM_OUTPUT_DIR / "invoice_summary.csv"
+
     latest_publication = None
     business_rfm_df = None
+    business_customer_summary_df = None
+    business_transactions_df = None
+    business_invoice_df = None
 
     if manifest_path.exists():
 
@@ -6572,16 +6689,29 @@ else:
             latest_publication = None
 
     if latest_rfm_path.exists():
-
         try:
-
-            business_rfm_df = pd.read_csv(
+            business_rfm_df = safe_read_published_csv(
                 latest_rfm_path
             )
-
         except Exception:
-
             business_rfm_df = None
+
+    try:
+        business_customer_summary_df = safe_read_published_csv(
+            team_customer_summary_path
+        )
+        business_transactions_df = safe_read_published_csv(
+            team_clean_transactions_path
+        )
+        business_invoice_df = safe_read_published_csv(
+            team_invoice_summary_path
+        )
+    except Exception:
+        # Quick Analytics is optional; the governed Power BI access and pipeline
+        # status remain available even if an auxiliary business file cannot load.
+        business_customer_summary_df = None
+        business_transactions_df = None
+        business_invoice_df = None
 
     publication_available = (
 
@@ -6752,39 +6882,30 @@ else:
                 "Reporting Files"
             )
 
+            team_reporting_paths = {
+                "Clean Transactions": TEAM_OUTPUT_DIR / "clean_transactions.csv",
+                "Customer RFM": TEAM_OUTPUT_DIR / "customer_rfm.csv",
+                "Customer Summary": TEAM_OUTPUT_DIR / "customer_summary.csv",
+                "Data Validation Report": TEAM_OUTPUT_DIR / "data_validation_report.csv",
+                "Final Customer Risk Prediction": TEAM_OUTPUT_DIR / "final_customer_risk_prediction.csv",
+                "Invoice Summary": TEAM_OUTPUT_DIR / "invoice_summary.csv",
+                "RFM Customer Features": TEAM_OUTPUT_DIR / "rfm_customer_features.csv",
+            }
+
             reporting_files_df = pd.DataFrame({
-
-                "Output": [
-                    "Customer RFM Reporting Dataset",
-                    "Clean Transaction Dataset",
-                    "Publication Manifest"
-                ],
-
+                "Output": list(team_reporting_paths.keys()),
                 "Status": [
-
-                    (
-                        "Available"
-                        if latest_rfm_path.exists()
-                        else "Unavailable"
-                    ),
-
-                    (
-                        "Available"
-                        if latest_clean_path.exists()
-                        else "Unavailable"
-                    ),
-
-                    (
-                        "Available"
-                        if manifest_path.exists()
-                        else "Unavailable"
-                    )
+                    "Available" if path.exists() else "Unavailable"
+                    for path in team_reporting_paths.values()
                 ],
-
                 "Purpose": [
-                    "Customer segmentation, risk and retention reporting",
-                    "Approved transaction-level reporting source",
-                    "Publication version and governance record"
+                    "Governed transaction source including flagged cancellations",
+                    "Approved RFM scoring and segmentation",
+                    "Business-facing Customer 360 master",
+                    "Validation and cleaning audit evidence",
+                    "Approved predictive risk output",
+                    "One row per invoice/order",
+                    "Reusable RFM and behavioural customer features",
                 ]
             })
 
@@ -6798,6 +6919,292 @@ else:
                 "The latest approved reporting dataset is available. "
                 "Business access is read-only and technical processing "
                 "functions remain restricted to authorised Technical users."
+            )
+
+
+    # ========================================================
+    # QUICK ANALYTICS
+    # ========================================================
+
+    elif navigation == "Quick Analytics":
+
+        st.header("Quick Analytics")
+        st.write(
+            "A lightweight business snapshot from the same approved publication "
+            "used by Power BI. The full executive reporting experience remains in Power BI."
+        )
+
+        if not publication_available:
+            st.warning(
+                "No approved publication is currently available. A Technical user must "
+                "publish the governed outputs first."
+            )
+
+        elif business_transactions_df is None or business_transactions_df.empty:
+            st.warning(
+                "The Quick Analytics transaction output is not available yet. "
+                "Republish the latest pipeline once to create the seven team datasets."
+            )
+
+        else:
+            sales = completed_sales_view(business_transactions_df)
+
+            if sales.empty:
+                st.warning("No completed-sale rows are available for Quick Analytics.")
+            else:
+                sales["Revenue"] = pd.to_numeric(
+                    sales["Revenue"],
+                    errors="coerce"
+                ).fillna(0)
+
+                overview_tab, product_tab, geo_tab = st.tabs([
+                    "Overview",
+                    "Products & Basket",
+                    "Geography",
+                ])
+
+                # ----------------------------------------------------
+                # OVERVIEW
+                # ----------------------------------------------------
+                with overview_tab:
+                    total_revenue = float(sales["Revenue"].sum())
+                    identifiable = sales.dropna(subset=["Customer ID"]).copy()
+                    total_customers = int(identifiable["Customer ID"].nunique())
+
+                    invoice_count = int(sales["Invoice"].nunique())
+                    average_order_value = (
+                        total_revenue / invoice_count
+                        if invoice_count > 0
+                        else 0.0
+                    )
+
+                    top_customer_text = "Unavailable"
+                    top_customer_value = 0.0
+                    if not identifiable.empty:
+                        customer_value = (
+                            identifiable.groupby("Customer ID")["Revenue"]
+                            .sum()
+                            .sort_values(ascending=False)
+                        )
+                        if not customer_value.empty:
+                            top_customer_id = customer_value.index[0]
+                            top_customer_text = str(int(float(top_customer_id)))
+                            top_customer_value = float(customer_value.iloc[0])
+
+                    country_revenue = (
+                        sales.groupby("Country")["Revenue"]
+                        .sum()
+                        .sort_values(ascending=False)
+                    )
+                    top_country = (
+                        str(country_revenue.index[0])
+                        if not country_revenue.empty
+                        else "Unavailable"
+                    )
+                    top_country_value = (
+                        float(country_revenue.iloc[0])
+                        if not country_revenue.empty
+                        else 0.0
+                    )
+
+                    c1, c2, c3, c4 = st.columns(4)
+                    c1.metric("Revenue", f"£{total_revenue:,.0f}")
+                    c2.metric("Customers", f"{total_customers:,}")
+                    c3.metric("Average Order Value", f"£{average_order_value:,.2f}")
+                    c4.metric("Orders", f"{invoice_count:,}")
+
+                    c5, c6 = st.columns(2)
+                    c5.metric(
+                        "Top Customer",
+                        top_customer_text,
+                        help=f"Completed-sales value: £{top_customer_value:,.2f}"
+                    )
+                    c6.metric(
+                        "Top Country",
+                        top_country,
+                        help=f"Completed-sales revenue: £{top_country_value:,.2f}"
+                    )
+
+                    if business_customer_summary_df is not None:
+                        st.caption(
+                            "Customer segmentation/risk measures are sourced from the approved "
+                            "customer_summary.csv publication; transaction KPIs use completed sales only."
+                        )
+
+                # ----------------------------------------------------
+                # PRODUCTS & MARKET BASKET
+                # ----------------------------------------------------
+                with product_tab:
+                    product_summary = (
+                        sales.dropna(subset=["Description"])
+                        .groupby("Description")
+                        .agg(
+                            Quantity=("Quantity", "sum"),
+                            Revenue=("Revenue", "sum"),
+                            Orders=("Invoice", "nunique"),
+                        )
+                        .sort_values("Revenue", ascending=False)
+                        .head(10)
+                        .reset_index()
+                    )
+
+                    if not product_summary.empty:
+                        top_product = product_summary.iloc[0]
+                        st.metric(
+                            "Top Revenue Product",
+                            str(top_product["Description"]),
+                            help=f"Revenue: £{float(top_product['Revenue']):,.2f}"
+                        )
+
+                        if PLOTLY_AVAILABLE:
+                            fig = px.bar(
+                                product_summary.sort_values("Revenue"),
+                                x="Revenue",
+                                y="Description",
+                                orientation="h",
+                                title="Top 10 Products by Revenue",
+                                labels={"Revenue": "Revenue (£)", "Description": "Product"}
+                            )
+                            fig.update_layout(height=480, margin=dict(l=10, r=10, t=50, b=10))
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.dataframe(product_summary, use_container_width=True, hide_index=True)
+
+                    st.divider()
+                    st.subheader("Market Basket Analysis")
+                    st.caption(
+                        "Apriori rules are calculated on completed sales at invoice level. "
+                        "Use looser thresholds for exploration, then tighten them for reporting."
+                    )
+
+                    m1, m2, m3, m4 = st.columns(4)
+                    mba_support = m1.number_input(
+                        "Minimum support",
+                        min_value=0.0005,
+                        max_value=0.05,
+                        value=0.002,
+                        step=0.0005,
+                        format="%.4f"
+                    )
+                    mba_confidence = m2.slider(
+                        "Minimum confidence",
+                        min_value=0.05,
+                        max_value=0.90,
+                        value=0.15,
+                        step=0.05
+                    )
+                    mba_lift = m3.slider(
+                        "Minimum lift",
+                        min_value=1.0,
+                        max_value=5.0,
+                        value=1.0,
+                        step=0.1
+                    )
+                    mba_products = m4.slider(
+                        "Products analysed",
+                        min_value=50,
+                        max_value=300,
+                        value=150,
+                        step=25
+                    )
+
+                    if st.button("Run Market Basket Analysis", type="primary"):
+                        with loading_overlay(
+                            "Finding frequently co-purchased products from completed-sale invoices."
+                        ):
+                            rules, diagnostics = compute_market_basket(
+                                business_transactions_df,
+                                min_support=mba_support,
+                                min_confidence=mba_confidence,
+                                min_lift=mba_lift,
+                                top_n_products=mba_products,
+                            )
+                        st.session_state.mba_rules = rules
+                        st.session_state.mba_diagnostics = diagnostics
+
+                    if st.session_state.mba_diagnostics is not None:
+                        diagnostics = st.session_state.mba_diagnostics
+                        d1, d2, d3, d4 = st.columns(4)
+                        d1.metric("Eligible Invoices", f"{diagnostics['eligible_invoices']:,}")
+                        d2.metric("Products Analysed", f"{diagnostics['products_analysed']:,}")
+                        d3.metric("Frequent Itemsets", f"{diagnostics['frequent_itemsets']:,}")
+                        d4.metric("Rules Returned", f"{diagnostics['rules_after_lift']:,}")
+                        st.caption(f"MBA status: {diagnostics['status']}")
+
+                    if st.session_state.mba_rules is not None:
+                        if st.session_state.mba_rules.empty:
+                            st.info(
+                                "No association rules met the selected thresholds. "
+                                "Try lower support/confidence or analyse more products."
+                            )
+                        else:
+                            st.dataframe(
+                                st.session_state.mba_rules.head(50),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+                # ----------------------------------------------------
+                # GEOGRAPHY
+                # ----------------------------------------------------
+                with geo_tab:
+                    country_summary = (
+                        sales.dropna(subset=["Country"])
+                        .groupby("Country")
+                        .agg(
+                            Revenue=("Revenue", "sum"),
+                            Orders=("Invoice", "nunique"),
+                            Customers=("Customer ID", "nunique"),
+                        )
+                        .reset_index()
+                        .sort_values("Revenue", ascending=False)
+                    )
+
+                    if country_summary.empty:
+                        st.info("No country information is available in the approved sales data.")
+                    else:
+                        g1, g2 = st.columns([2, 1])
+
+                        with g1:
+                            st.subheader("Revenue by Country")
+                            if PLOTLY_AVAILABLE:
+                                map_fig = px.choropleth(
+                                    country_summary,
+                                    locations="Country",
+                                    locationmode="country names",
+                                    color="Revenue",
+                                    hover_name="Country",
+                                    hover_data={
+                                        "Revenue": ":,.2f",
+                                        "Orders": ":,",
+                                        "Customers": ":,",
+                                    },
+                                    title="Global Revenue Footprint"
+                                )
+                                map_fig.update_layout(
+                                    height=520,
+                                    margin=dict(l=0, r=0, t=50, b=0)
+                                )
+                                st.plotly_chart(map_fig, use_container_width=True)
+                            else:
+                                st.dataframe(
+                                    country_summary,
+                                    use_container_width=True,
+                                    hide_index=True
+                                )
+
+                        with g2:
+                            st.subheader("Top Countries")
+                            st.dataframe(
+                                country_summary.head(10),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+
+            st.divider()
+            st.info(
+                "Quick Analytics is intentionally lightweight. Use the Power BI Dashboard "
+                "for the full executive, retention and scenario-analysis experience."
             )
 
 
