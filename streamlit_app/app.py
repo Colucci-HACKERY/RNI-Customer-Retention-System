@@ -1,3 +1,4 @@
+# ============================================================
 # RNI CUSTOMER RETENTION SYSTEM
 # Features:
 # - Authentication
@@ -17,6 +18,9 @@
 # - Data quality scoring and detailed cleaning audit
 # - Seven governed team CSV outputs
 # - Lightweight business Quick Analytics with map, products and MBA
+# - Business-facing data-period / data-through metadata
+# - Case-insensitive country standardisation and unresolved-label validation
+# - Modern stretch-width Streamlit tables and charts
 # ============================================================
 # IMPORTS
 # ============================================================
@@ -53,6 +57,7 @@ except Exception:
     association_rules = None
     MLXTEND_AVAILABLE = False
 
+
 # ============================================================
 # PAGE CONFIGURATION
 # ============================================================
@@ -62,6 +67,7 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
 
 # ============================================================
 # APPLICATION STYLING
@@ -1783,31 +1789,203 @@ def render_proceed_button(label, target_page, key):
     )
 
 
-# Common country aliases found in the Online Retail II source are standardised
-# once here so Streamlit and the governed Power BI outputs use the same names.
+# ============================================================
+# COUNTRY STANDARDISATION / GEOGRAPHIC VALIDATION
+# ============================================================
+# Country names are normalised once at the governed cleaning stage so that
+# Streamlit, the seven team outputs and Power BI all use the same labels.
+# Matching is deliberately case-insensitive and punctuation-insensitive.
+
 COUNTRY_RENAME_MAP = {
-    "EIRE": "Ireland",
-    "USA": "United States",
-    "RSA": "South Africa",
-    "Korea": "South Korea",
-    "UK": "United Kingdom",
-    "U.K.": "United Kingdom",
-    "United States of America": "United States",
+    "eire": "Ireland",
+    "ireland": "Ireland",
+    "usa": "United States",
+    "us": "United States",
+    "u s a": "United States",
+    "u s": "United States",
+    "united states": "United States",
+    "united states of america": "United States",
+    "rsa": "South Africa",
+    "south africa": "South Africa",
+    "korea": "South Korea",
+    "south korea": "South Korea",
+    "republic of korea": "South Korea",
+    "uk": "United Kingdom",
+    "u k": "United Kingdom",
+    "united kingdom": "United Kingdom",
+    "great britain": "United Kingdom",
 }
 
-# These values are useful for auditing but are not individual countries and
-# therefore should not be sent to a country-name choropleth.
+# Canonical names expected in the Online Retail II geography plus common
+# reporting countries.  Unknown labels are never silently changed; they remain
+# available for audit and are surfaced as a validation warning.
+KNOWN_REPORTING_COUNTRIES = {
+    "Australia", "Austria", "Bahrain", "Belgium", "Bermuda", "Botswana",
+    "Brazil", "Canada", "Cyprus", "Czech Republic", "Denmark", "Finland",
+    "Hong Kong",
+    "France", "Germany", "Greece", "Iceland", "Ireland", "Israel", "Italy",
+    "Japan", "Lebanon", "Lithuania", "Malta", "Netherlands", "Nigeria",
+    "Norway", "Poland", "Portugal", "Saudi Arabia", "Singapore",
+    "South Africa", "South Korea", "Spain", "Sweden", "Switzerland",
+    "Thailand", "United Arab Emirates", "United Kingdom", "United States",
+}
+
+# These labels may appear in the source and are retained for audit, but they are
+# not individual countries and should not be sent to a country-name choropleth.
 COUNTRY_MAP_EXCLUSIONS = {
     "Unspecified",
     "European Community",
+    "West Indies",
+    "Channel Islands",
 }
 
 
-def standardise_country_names(series):
-    """Trim country labels and replace known aliases with reporting names."""
+def normalise_country_key(value):
+    """Return a case/punctuation-insensitive key for comparing country labels."""
 
-    countries = series.astype("string").str.strip()
-    return countries.replace(COUNTRY_RENAME_MAP)
+    if pd.isna(value):
+        return ""
+
+    text = re.sub(r"\s+", " ", str(value).strip())
+    text = re.sub(r"[^a-z0-9]+", " ", text.casefold())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+_CANONICAL_COUNTRY_BY_KEY = {
+    normalise_country_key(country): country
+    for country in KNOWN_REPORTING_COUNTRIES
+}
+
+_COUNTRY_EXCLUSION_BY_KEY = {
+    normalise_country_key(country): country
+    for country in COUNTRY_MAP_EXCLUSIONS
+}
+
+
+def standardise_country_value(value):
+    """Standardise one country label without inventing a replacement for unknowns."""
+
+    if pd.isna(value):
+        return pd.NA
+
+    cleaned = re.sub(r"\s+", " ", str(value).strip())
+    if not cleaned:
+        return pd.NA
+
+    key = normalise_country_key(cleaned)
+
+    if key in COUNTRY_RENAME_MAP:
+        return COUNTRY_RENAME_MAP[key]
+
+    if key in _CANONICAL_COUNTRY_BY_KEY:
+        return _CANONICAL_COUNTRY_BY_KEY[key]
+
+    if key in _COUNTRY_EXCLUSION_BY_KEY:
+        return _COUNTRY_EXCLUSION_BY_KEY[key]
+
+    # Preserve unresolved source text for audit instead of silently guessing.
+    return cleaned
+
+
+def standardise_country_names(series):
+    """Return reporting-ready country labels with case-insensitive alias handling."""
+
+    return series.astype("string").map(standardise_country_value)
+
+
+def assess_country_labels(series):
+    """Classify unique source country labels as recognised, excluded or unresolved."""
+
+    source = (
+        series.astype("string")
+        .str.strip()
+        .str.replace(r"\s+", " ", regex=True)
+        .dropna()
+    )
+    source = source[source.ne("")]
+
+    unique_source = list(dict.fromkeys(source.tolist()))
+    recognised = []
+    excluded = []
+    unresolved = []
+
+    for raw_label in unique_source:
+        standardised = standardise_country_value(raw_label)
+        key = normalise_country_key(standardised)
+
+        if key in _COUNTRY_EXCLUSION_BY_KEY:
+            excluded.append(str(standardised))
+        elif key in _CANONICAL_COUNTRY_BY_KEY:
+            recognised.append(str(standardised))
+        else:
+            unresolved.append(str(raw_label))
+
+    return {
+        "recognised": sorted(set(recognised)),
+        "excluded": sorted(set(excluded)),
+        "unresolved": sorted(set(unresolved)),
+    }
+
+
+# ============================================================
+# DATA PERIOD HELPERS
+# ============================================================
+
+def get_data_period(df):
+    """Return the first and last valid completed-sale dates in a transaction dataset."""
+
+    if df is None or df.empty or "InvoiceDate" not in df.columns:
+        return None, None
+
+    working = completed_sales_view(df)
+    if working.empty:
+        working = df.copy()
+
+    dates = pd.to_datetime(working["InvoiceDate"], errors="coerce").dropna()
+    if dates.empty:
+        return None, None
+
+    return dates.min(), dates.max()
+
+
+def format_business_date(value):
+    """Format a date for compact business-facing captions."""
+
+    if value is None or pd.isna(value):
+        return "Unavailable"
+
+    parsed = pd.to_datetime(value, errors="coerce")
+    if pd.isna(parsed):
+        return str(value)
+
+    # Cross-platform day formatting without relying on %-d.
+    return f"{parsed.day} {parsed.strftime('%b %Y')}"
+
+
+def resolve_publication_data_period(publication_record=None, transactions_df=None):
+    """Read the governed data period from the manifest, with transaction fallback."""
+
+    start_value = None
+    through_value = None
+
+    if publication_record is not None:
+        try:
+            start_value = publication_record.get("DataStartDate")
+            through_value = publication_record.get("DataThroughDate")
+        except Exception:
+            pass
+
+    start_parsed = pd.to_datetime(start_value, errors="coerce")
+    through_parsed = pd.to_datetime(through_value, errors="coerce")
+
+    if pd.isna(start_parsed) or pd.isna(through_parsed):
+        fallback_start, fallback_through = get_data_period(transactions_df)
+        if pd.isna(start_parsed):
+            start_parsed = fallback_start
+        if pd.isna(through_parsed):
+            through_parsed = fallback_through
+
+    return start_parsed, through_parsed
 
 
 def completed_sales_view(df):
@@ -2477,6 +2655,57 @@ def validate_dataset(
     validation_df = (
         df.copy()
     )
+
+    # Country-label governance.  Known aliases are assessed case-insensitively
+    # before cleaning so the Technical user can see whether any geography will
+    # fail to resolve cleanly in Streamlit or Power BI maps.
+    country_assessment = assess_country_labels(
+        validation_df["Country"]
+    )
+
+    recognised_countries = country_assessment["recognised"]
+    excluded_country_labels = country_assessment["excluded"]
+    unresolved_country_labels = country_assessment["unresolved"]
+
+    validation_results.append({
+        "Check": "Recognised Country Labels",
+        "Status": "PASS",
+        "Count": len(recognised_countries),
+        "Details": (
+            f"{len(recognised_countries)} unique country label(s) are recognised "
+            "after case-insensitive standardisation."
+        )
+    })
+
+    validation_results.append({
+        "Check": "Excluded Aggregate Country Labels",
+        # These labels are explicitly governed and excluded from maps, so their
+        # presence is informative rather than a data-quality penalty.
+        "Status": "PASS",
+        "Count": len(excluded_country_labels),
+        "Details": (
+            "Retained for audit but excluded from the world map: "
+            + ", ".join(excluded_country_labels)
+            if excluded_country_labels
+            else "No aggregate/non-country geography labels detected."
+        )
+    })
+
+    validation_results.append({
+        "Check": "Unresolved Country Labels",
+        "Status": (
+            "WARNING"
+            if unresolved_country_labels
+            else "PASS"
+        ),
+        "Count": len(unresolved_country_labels),
+        "Details": (
+            "Review these labels before reporting: "
+            + ", ".join(unresolved_country_labels)
+            if unresolved_country_labels
+            else "All country labels are recognised or explicitly excluded from mapping."
+        )
+    })
 
     # Missing Customer IDs
     missing_customer_ids = int(
@@ -3715,6 +3944,20 @@ def publish_pipeline_outputs(
     publication_version = f"PUB_{timestamp}"
     publication_display_time = publication_time.strftime("%Y-%m-%d %H:%M:%S")
 
+    # Keep the source data period separate from the publication timestamp.
+    # This prevents historical retail data from being mistaken for current data.
+    data_start_date, data_through_date = get_data_period(cleaned_df)
+    data_start_iso = (
+        data_start_date.strftime("%Y-%m-%d")
+        if data_start_date is not None and not pd.isna(data_start_date)
+        else ""
+    )
+    data_through_iso = (
+        data_through_date.strftime("%Y-%m-%d")
+        if data_through_date is not None and not pd.isna(data_through_date)
+        else ""
+    )
+
     reporting_df, high_value_threshold = build_reporting_dataset(rfm_df)
 
     cv_source = MODEL_ARTIFACT_DIR / "model_cv_results.csv"
@@ -3869,6 +4112,8 @@ def publish_pipeline_outputs(
         "PublicationVersion": [publication_version],
         "PublishedBy": [username],
         "SourceFile": [source_filename],
+        "DataStartDate": [data_start_iso],
+        "DataThroughDate": [data_through_iso],
         "CleanRows": [len(cleaned_df)],
         "RFMRows": [len(reporting_df)],
         "RFMColumns": [len(reporting_df.columns)],
@@ -3903,6 +4148,8 @@ def publish_pipeline_outputs(
         "publication_version": publication_version,
         "published_by": username,
         "source_filename": source_filename,
+        "data_start_date": data_start_iso,
+        "data_through_date": data_through_iso,
         "clean_rows": len(cleaned_df),
         "rfm_rows": len(reporting_df),
         "rfm_columns": len(reporting_df.columns),
@@ -4355,7 +4602,7 @@ if user_role == TECHNICAL_ROLE:
 
             st.dataframe(
                 column_info,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -4367,7 +4614,7 @@ if user_role == TECHNICAL_ROLE:
                 raw_df.head(
                     20
                 ),
-                use_container_width=True
+                width="stretch"
             )
 
             render_proceed_button(
@@ -4588,9 +4835,52 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     validation_results,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
+
+                # Make geographic readiness visible without forcing the user to
+                # inspect the full validation table. Unresolved labels are kept
+                # as warnings so they can be corrected before Power BI mapping.
+                country_validation = validation_results.loc[
+                    validation_results["Check"].isin([
+                        "Recognised Country Labels",
+                        "Excluded Aggregate Country Labels",
+                        "Unresolved Country Labels",
+                    ])
+                ].copy()
+
+                if not country_validation.empty:
+                    with st.expander("Country Mapping Status", expanded=True):
+                        country_lookup = country_validation.set_index("Check")
+
+                        recognised_count = int(
+                            country_lookup.loc["Recognised Country Labels", "Count"]
+                        ) if "Recognised Country Labels" in country_lookup.index else 0
+
+                        excluded_count = int(
+                            country_lookup.loc["Excluded Aggregate Country Labels", "Count"]
+                        ) if "Excluded Aggregate Country Labels" in country_lookup.index else 0
+
+                        unresolved_count = int(
+                            country_lookup.loc["Unresolved Country Labels", "Count"]
+                        ) if "Unresolved Country Labels" in country_lookup.index else 0
+
+                        country_col1, country_col2, country_col3 = st.columns(3)
+                        country_col1.metric("Recognised", recognised_count)
+                        country_col2.metric("Excluded / Aggregate", excluded_count)
+                        country_col3.metric("Unresolved", unresolved_count)
+
+                        unresolved_row = country_validation.loc[
+                            country_validation["Check"].eq("Unresolved Country Labels")
+                        ]
+                        if unresolved_count > 0 and not unresolved_row.empty:
+                            st.warning(str(unresolved_row.iloc[0]["Details"]))
+                        else:
+                            st.success(
+                                "All geography labels are ready for governed reporting or "
+                                "explicitly excluded from country-level mapping."
+                            )
 
                 if failed > 0:
 
@@ -4817,7 +5107,7 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     st.session_state.cleaning_steps,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -4871,7 +5161,7 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     post_checks,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -4881,7 +5171,7 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     cleaned_df.head(20),
-                    use_container_width=True
+                    width="stretch"
                 )
 
                 render_proceed_button(
@@ -5076,7 +5366,7 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     descriptive_df,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5088,7 +5378,7 @@ if user_role == TECHNICAL_ROLE:
                     summary[
                         "segment_counts"
                     ],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5100,7 +5390,7 @@ if user_role == TECHNICAL_ROLE:
                     summary[
                         "risk_counts"
                     ],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5112,7 +5402,7 @@ if user_role == TECHNICAL_ROLE:
                     rfm_df.head(
                         20
                     ),
-                    use_container_width=True
+                    width="stretch"
                 )
 
                 render_proceed_button(
@@ -5234,7 +5524,7 @@ if user_role == TECHNICAL_ROLE:
 
             st.dataframe(
                 readiness_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -5422,9 +5712,10 @@ if user_role == TECHNICAL_ROLE:
                 )
 
                 st.caption(
-                    f"Published at "
-                    f"{summary['publication_time']} from "
-                    f"{summary['source_filename']}"
+                    f"Data period: {format_business_date(summary.get('data_start_date'))} "
+                    f"to {format_business_date(summary.get('data_through_date'))} | "
+                    f"Published: {summary['publication_time']} | "
+                    f"Source: {summary['source_filename']}"
                 )
 
                 st.subheader(
@@ -5435,7 +5726,7 @@ if user_role == TECHNICAL_ROLE:
                     summary[
                         "priority_counts"
                     ],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5469,7 +5760,7 @@ if user_role == TECHNICAL_ROLE:
 
                 st.dataframe(
                     published_files,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5481,7 +5772,7 @@ if user_role == TECHNICAL_ROLE:
                     published_rfm.head(
                         20
                     ),
-                    use_container_width=True
+                    width="stretch"
                 )
 
                 csv_data = (
@@ -5530,7 +5821,7 @@ if user_role == TECHNICAL_ROLE:
                     summary[
                         "predicted_counts"
                     ],
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -5753,7 +6044,7 @@ if user_role == TECHNICAL_ROLE:
                 filtered_audit[
                     display_columns
                 ],
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -5909,7 +6200,7 @@ if user_role == TECHNICAL_ROLE:
 
             st.dataframe(
                 users_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -6903,10 +7194,16 @@ else:
                 "Ready"
             )
 
+            data_start, data_through = resolve_publication_data_period(
+                latest_publication,
+                business_transactions_df
+            )
+
             st.caption(
-                f"Published at {publication_time} "
-                f"from {source_file} "
-                f"by {published_by}."
+                f"Data period: {format_business_date(data_start)} "
+                f"to {format_business_date(data_through)} | "
+                f"Published: {publication_time} | "
+                f"Source: {source_file} | Published by: {published_by}"
             )
 
             st.divider()
@@ -6947,7 +7244,7 @@ else:
 
             st.dataframe(
                 pipeline_status_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -6984,7 +7281,7 @@ else:
 
             st.dataframe(
                 reporting_files_df,
-                use_container_width=True,
+                width="stretch",
                 hide_index=True
             )
 
@@ -6995,9 +7292,7 @@ else:
             )
 
 
-    # ========================================================
-    # QUICK ANALYTICS
-    # ========================================================
+    # ---QUICK ANALYTICS
 
     elif navigation == "Quick Analytics":
 
@@ -7038,15 +7333,32 @@ else:
                         sales["Country"]
                     )
 
+                data_start, data_through = resolve_publication_data_period(
+                    latest_publication,
+                    business_transactions_df
+                )
+                quick_publication_time = str(
+                    latest_publication.get("PublicationTimestamp", "Unavailable")
+                )
+                quick_source_file = str(
+                    latest_publication.get("SourceFile", "Unavailable")
+                )
+                st.caption(
+                    f"Data period: {format_business_date(data_start)} "
+                    f"to {format_business_date(data_through)} | "
+                    f"Published: {quick_publication_time} | "
+                    f"Source: {quick_source_file}"
+                )
+
                 overview_tab, product_tab, geo_tab = st.tabs([
                     "Overview",
                     "Products & Basket",
                     "Geography",
                 ])
 
-                # ----------------------------------------------------
-                # OVERVIEW
-                # ----------------------------------------------------
+
+                # ---OVERVIEW
+
                 with overview_tab:
                     total_revenue = float(sales["Revenue"].sum())
                     identifiable = sales.dropna(subset=["Customer ID"]).copy()
@@ -7114,9 +7426,8 @@ else:
                             "customer_summary.csv publication; transaction KPIs use completed sales only."
                         )
 
-                # ----------------------------------------------------
-                # PRODUCTS & MARKET BASKET
-                # ----------------------------------------------------
+                # ---PRODUCTS & MARKET BASKET
+
                 with product_tab:
                     product_summary = (
                         sales.dropna(subset=["Description"])
@@ -7149,9 +7460,9 @@ else:
                                 labels={"Revenue": "Revenue (£)", "Description": "Product"}
                             )
                             fig.update_layout(height=480, margin=dict(l=10, r=10, t=50, b=10))
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig, width="stretch")
                         else:
-                            st.dataframe(product_summary, use_container_width=True, hide_index=True)
+                            st.dataframe(product_summary, width="stretch", hide_index=True)
 
                     st.divider()
                     st.subheader("Market Basket Analysis")
@@ -7223,13 +7534,12 @@ else:
                         else:
                             st.dataframe(
                                 st.session_state.mba_rules.head(50),
-                                use_container_width=True,
+                                width="stretch",
                                 hide_index=True
                             )
 
-                # ----------------------------------------------------
-                # GEOGRAPHY
-                # ----------------------------------------------------
+                # ---GEOGRAPHY
+
                 with geo_tab:
                     country_summary = (
                         sales.dropna(subset=["Country"])
@@ -7274,11 +7584,11 @@ else:
                                     height=520,
                                     margin=dict(l=0, r=0, t=50, b=0)
                                 )
-                                st.plotly_chart(map_fig, use_container_width=True)
+                                st.plotly_chart(map_fig, width="stretch")
                             else:
                                 st.dataframe(
                                     country_summary,
-                                    use_container_width=True,
+                                    width="stretch",
                                     hide_index=True
                                 )
 
@@ -7286,7 +7596,7 @@ else:
                             st.subheader("Top Countries")
                             st.dataframe(
                                 country_summary.head(10),
-                                use_container_width=True,
+                                width="stretch",
                                 hide_index=True
                             )
 
@@ -7296,10 +7606,8 @@ else:
                 "for the full executive, retention and scenario-analysis experience."
             )
 
+    # ---POWER BI DASHBOARD
 
-    # ========================================================
-    # POWER BI DASHBOARD
-    # ========================================================
 
     elif navigation == "Power BI Dashboard":
 
@@ -7383,9 +7691,19 @@ else:
                 f"{high_value_at_risk:,}"
             )
 
+            data_start, data_through = resolve_publication_data_period(
+                latest_publication,
+                business_transactions_df
+            )
+            source_file = str(
+                latest_publication.get("SourceFile", "Unavailable")
+            )
+
             st.caption(
-                f"Latest approved publication: "
-                f"{publication_time}."
+                f"Data period: {format_business_date(data_start)} "
+                f"to {format_business_date(data_through)} | "
+                f"Published: {publication_time} | "
+                f"Source: {source_file}"
             )
 
             st.divider()
@@ -7414,7 +7732,7 @@ else:
 
                 st.dataframe(
                     business_priority_counts,
-                    use_container_width=True,
+                    width="stretch",
                     hide_index=True
                 )
 
@@ -7449,7 +7767,7 @@ else:
                 .head(
                     20
                 ),
-                use_container_width=True
+                width="stretch"
             )
 
             st.divider()
