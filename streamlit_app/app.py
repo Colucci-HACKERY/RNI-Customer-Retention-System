@@ -64,7 +64,7 @@ except Exception:
 
 st.set_page_config(
     page_title="RNI Customer Retention System",
-    page_icon="📊",
+    page_icon="CRS",
     layout="wide"
 )
 
@@ -72,7 +72,6 @@ st.set_page_config(
 # ============================================================
 # APPLICATION STYLING
 # ============================================================
-# Keep Streamlit's native appearance, but improve spacing and make tab bars
 # wrap after three tabs so navigation never disappears off-screen.
 st.markdown(
     """
