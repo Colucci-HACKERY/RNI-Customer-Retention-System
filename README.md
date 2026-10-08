@@ -23,6 +23,7 @@ Contributed to repository architecture, core Python logic, RFM algorithm impleme
 **Laone Akanyang** – Contributor / Data Analyst
 Contributed to data cleaning, dataset preparation, statistical calculations, powerBI dashboard and team code coordination
 
+some csv files could not be uploaded because of their size
 Getting Started
 Prerequisites
 Ensure you have Python installed on your system:
