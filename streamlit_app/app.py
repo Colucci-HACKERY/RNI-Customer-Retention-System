@@ -3,9 +3,27 @@
 # ------------------------------------------------------------
 # A governed, role-separated customer retention analytics
 # pipeline that ingests online retail transactions, validates
-# and cleans them, engineers RFM features, exposes predictive
-# retention-risk outputs, and publishes approved datasets to a
+# and cleans them, engineers RFM features, evaluates the
+# retention-risk model, and publishes approved datasets to a
 # Power BI business layer.
+#
+# Technical workspace flow
+# ------------------------
+# Pipeline Overview
+# Dataset Ingestion
+# Data Validation
+# Data Cleaning
+# RFM Feature Engineering
+# Model Evaluation
+# Version & Publish
+# Audit Trail
+# User Management
+#
+# Business workspace
+# ------------------
+# Pipeline Status
+# Quick Analytics (Overview, Products & Basket, Geography)
+# Power BI Dashboard
 #
 # Structure
 # ---------
@@ -19,12 +37,13 @@
 # 8.  Authentication and session bootstrap
 # 9.  Sidebar navigation, session state and pipeline helpers
 # 10. Country standardisation and geographic validation
-# 11. Data period helpers, quality scoring and shared utilities
+# 11. Shared data utilities
 # 12. Data ingestion, validation, cleaning and RFM engineering
 # 13. Publication, versioning and Power BI hand-off
 # 14. Technical workspace pages
 # 15. Business workspace pages
 # ============================================================
+
 
 # ------------------------------------------------------------
 # 1. Imports and optional dependencies
@@ -114,6 +133,32 @@ _APP_CSS = """
         background: rgba(120, 120, 120, 0.08);
         border: 1px solid rgba(120, 120, 120, 0.12);
         margin-bottom: 0.85rem;
+    }
+    @keyframes rni_spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+    .rni-inline-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.85rem 1.1rem;
+        border-radius: 12px;
+        background: rgba(26,82,118,0.05);
+        border: 1px solid rgba(26,82,118,0.15);
+        margin-bottom: 1rem;
+    }
+    .rni-inline-loading .spinner {
+        width: 24px;
+        height: 24px;
+        border: 3px solid #e8ecf1;
+        border-top-color: #1a5276;
+        border-radius: 50%;
+        animation: rni_spin 1s linear infinite;
+    }
+    .rni-inline-loading .text {
+        font-size: 0.95rem;
+        color: #1a2a4a;
     }
 </style>
 """
@@ -873,8 +918,8 @@ if user_role == TECHNICAL_ROLE:
             "Data Validation",
             "Data Cleaning",
             "RFM Feature Engineering",
-            "Version & Publish",
             "Model Evaluation",
+            "Version & Publish",
             "Audit Trail",
             "User Management",
         ],
@@ -912,11 +957,11 @@ _SESSION_DEFAULTS: dict[str, Any] = {
     "rfm_data": None,
     "rfm_summary": None,
     "rfm_complete": False,
+    "model_reviewed": False,
     "publication_complete": False,
     "publication_summary": None,
     "published_rfm_data": None,
     "published_at": None,
-    "model_reviewed": False,
 }
 
 for _key, _value in _SESSION_DEFAULTS.items():
@@ -965,23 +1010,31 @@ def loading_overlay(
             position: fixed;
             inset: 0;
             z-index: 999999;
-            background: rgba(255,255,255,0.82);
-            backdrop-filter: blur(2px);
+            background: rgba(255,255,255,0.94);
             display: flex;
             align-items: center;
             justify-content: center;">
             <div style="
                 max-width: 460px;
-                padding: 1.4rem 1.8rem;
+                padding: 1.7rem 2.1rem;
                 border-radius: 14px;
                 background: white;
-                border: 1px solid rgba(0,0,0,0.12);
+                border: 1px solid rgba(0,0,0,0.10);
                 box-shadow: 0 12px 35px rgba(0,0,0,0.15);
                 text-align: center;">
-                <div style="font-size:1.15rem;font-weight:700;margin-bottom:0.35rem;">
+                <div style="
+                    width: 44px;
+                    height: 44px;
+                    margin: 0 auto 0.9rem auto;
+                    border: 4px solid #e8ecf1;
+                    border-top-color: #1a5276;
+                    border-radius: 50%;
+                    animation: rni_spin 1s linear infinite;">
+                </div>
+                <div style="font-size:1.15rem;font-weight:700;color:#1a2a4a;">
                     Loading, please wait...
                 </div>
-                <div style="font-size:0.92rem;color:#555;">
+                <div style="font-size:0.92rem;color:#555;margin-top:0.35rem;">
                     {message}
                 </div>
             </div>
@@ -993,6 +1046,32 @@ def loading_overlay(
         yield
     finally:
         overlay.empty()
+
+
+def render_inline_loading(message: str) -> Any:
+    """Render an inline loading banner and return the placeholder.
+
+    The caller is expected to call ``placeholder.empty()`` once the
+    page has finished rendering so the banner is not visible after
+    the workspace has loaded.
+
+    Args:
+        message: Short loading message.
+
+    Returns:
+        A Streamlit placeholder that can be cleared later.
+    """
+    placeholder = st.empty()
+    placeholder.markdown(
+        f"""
+        <div class="rni-inline-loading">
+            <div class="spinner"></div>
+            <div class="text">{message}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    return placeholder
 
 
 def go_to_technical_page(page_name: str) -> None:
@@ -1174,7 +1253,7 @@ def assess_country_labels(series: pd.Series) -> dict[str, list[str]]:
 
 
 # ------------------------------------------------------------
-# 11. Data period helpers, quality scoring and shared utilities
+# 11. Shared data utilities
 # ------------------------------------------------------------
 
 def completed_sales_view(df: Optional[pd.DataFrame]) -> pd.DataFrame:
@@ -1280,9 +1359,7 @@ def calculate_data_quality_score(
 def read_csv_cached(path_text: str, modified_time: int) -> pd.DataFrame:
     """Cache a CSV read keyed by path and modification time."""
     del modified_time  # used only for cache invalidation
-    return pd.read_csv(
-        path_text, dtype={"Invoice": "string", "StockCode": "string"}
-    )
+    return pd.read_csv(path_text)
 
 
 def safe_read_published_csv(path: Path) -> Optional[pd.DataFrame]:
@@ -1457,8 +1534,30 @@ def build_customer_summary(
     reporting_df: pd.DataFrame,
     rfm_features_df: Optional[pd.DataFrame],
     risk_df: Optional[pd.DataFrame],
+    transactions_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
-    """Build the business-facing Customer 360 master dataset."""
+    """Build the business-facing Customer 360 master dataset.
+
+    The final customer summary is assembled from four sources:
+
+    1. ``reporting_df`` — RFM scores, segments, risk level and priority.
+    2. ``rfm_features_df`` — behavioural features such as average order
+       value, product diversity and order frequency trend.
+    3. ``risk_df`` — approved predictive risk outputs.
+    4. ``transactions_df`` — used only to attach each customer's
+       primary country of record, which is required for geographic
+       reporting in the Streamlit business workspace and in Power BI.
+
+    Args:
+        reporting_df: RFM reporting dataframe.
+        rfm_features_df: Reusable customer feature dataframe.
+        risk_df: Approved predictive risk dataframe.
+        transactions_df: Cleaned transaction dataframe, used to source
+            each customer's most frequent country of record.
+
+    Returns:
+        A Customer 360 dataframe including a ``Country`` column.
+    """
     customer_summary = reporting_df.copy()
 
     if rfm_features_df is not None and not rfm_features_df.empty:
@@ -1490,7 +1589,9 @@ def build_customer_summary(
             risk_copy[risk_customer_column] = pd.to_numeric(
                 risk_copy[risk_customer_column], errors="coerce"
             )
-            risk_copy = risk_copy.dropna(subset=[risk_customer_column]).copy()
+            risk_copy = risk_copy.dropna(
+                subset=[risk_customer_column]
+            ).copy()
             risk_copy[risk_customer_column] = risk_copy[
                 risk_customer_column
             ].astype(int)
@@ -1508,10 +1609,77 @@ def build_customer_summary(
             ]
 
             customer_summary = customer_summary.merge(
-                risk_copy[risk_columns].drop_duplicates(subset=["Customer ID"]),
+                risk_copy[risk_columns].drop_duplicates(
+                    subset=["Customer ID"]
+                ),
                 on="Customer ID",
                 how="left",
             )
+
+    # Attach each customer's primary country of record. Sourced from
+    # the cleaned transaction layer because RFM aggregation does not
+    # carry geographic attributes through the pipeline by default.
+    if (
+        transactions_df is not None
+        and not transactions_df.empty
+        and "Country" in transactions_df.columns
+        and "Customer ID" in transactions_df.columns
+    ):
+        transaction_country = transactions_df.copy()
+        transaction_country["Customer ID"] = pd.to_numeric(
+            transaction_country["Customer ID"], errors="coerce"
+        )
+        transaction_country = transaction_country.dropna(
+            subset=["Customer ID"]
+        ).copy()
+        transaction_country["Customer ID"] = transaction_country[
+            "Customer ID"
+        ].astype(int)
+
+        transaction_country = transaction_country.dropna(
+            subset=["Country"]
+        ).copy()
+
+        if not transaction_country.empty:
+            transaction_country["Country"] = standardise_country_names(
+                transaction_country["Country"]
+            )
+
+            completed_country_source = transaction_country
+            if "IsCompletedSale" in completed_country_source.columns:
+                completed_country_source = completed_country_source.loc[
+                    completed_country_source["IsCompletedSale"].fillna(False)
+                ].copy()
+
+            if completed_country_source.empty:
+                completed_country_source = transaction_country
+
+            primary_country = (
+                completed_country_source
+                .groupby(["Customer ID", "Country"])
+                .size()
+                .reset_index(name="Occurrences")
+                .sort_values(
+                    ["Customer ID", "Occurrences"],
+                    ascending=[True, False],
+                )
+                .drop_duplicates(subset=["Customer ID"], keep="first")
+                [["Customer ID", "Country"]]
+            )
+
+            if "Country" in customer_summary.columns:
+                customer_summary = customer_summary.drop(
+                    columns=["Country"]
+                )
+
+            customer_summary = customer_summary.merge(
+                primary_country,
+                on="Customer ID",
+                how="left",
+            )
+
+    if "Country" not in customer_summary.columns:
+        customer_summary["Country"] = "Unavailable"
 
     return customer_summary
 
@@ -1549,10 +1717,6 @@ def build_data_validation_report(
 
     return pd.concat([validation, cleaning_report], ignore_index=True)
 
-
-# ------------------------------------------------------------
-# 11b. Market basket analysis (optional dependency)
-# ------------------------------------------------------------
 
 def compute_market_basket(
     cleaned_df: Optional[pd.DataFrame],
@@ -1728,11 +1892,7 @@ def load_uploaded_data(
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
-        # Identifiers may contain letters; preserve them as text before preview.
-        return pd.read_csv(
-            io.BytesIO(uploaded_file.getvalue()),
-            dtype={"Invoice": "string", "StockCode": "string"},
-        )
+        return pd.read_csv(io.BytesIO(uploaded_file.getvalue()))
 
     if not filename.endswith(".xlsx"):
         raise ValueError(
@@ -1747,7 +1907,6 @@ def load_uploaded_data(
     sheets = pd.read_excel(
         io.BytesIO(uploaded_file.getvalue()),
         sheet_name=list(selected_sheets),
-        dtype={"Invoice": "string", "StockCode": "string"},
     )
 
     if len(sheets) == 0:
@@ -2531,7 +2690,10 @@ def publish_pipeline_outputs(
     rfm_customer_features_df = build_rfm_customer_features(cleaned_df, rfm_df)
     final_customer_risk_prediction_df = temporal_df.copy()
     customer_summary_df = build_customer_summary(
-        reporting_df, rfm_customer_features_df, final_customer_risk_prediction_df
+        reporting_df,
+        rfm_customer_features_df,
+        final_customer_risk_prediction_df,
+        transactions_df=cleaned_df,
     )
     validation_report_df = build_data_validation_report(
         validation_results, cleaning_steps
@@ -2834,9 +2996,6 @@ if user_role == TECHNICAL_ROLE:
                 is_excel and selected_sheets and len(selected_sheets) > 1
             )
 
-            # Explicit approval is required when combining multiple
-            # Excel sheets into a single transaction stream, since this
-            # is a governance-relevant operation.
             sheet_combination_approved = True
             if combining_multiple_sheets:
                 st.warning(
@@ -2964,8 +3123,6 @@ if user_role == TECHNICAL_ROLE:
                 )
                 st.dataframe(styled_preview, width="stretch")
             except Exception:
-                # Pandas Styler may fail on certain dtypes; fall back to
-                # a plain dataframe.
                 st.dataframe(preview_df, width="stretch")
 
             render_proceed_button(
@@ -3547,308 +3704,13 @@ if user_role == TECHNICAL_ROLE:
             st.dataframe(rfm_df.head(20), width="stretch")
 
             render_proceed_button(
-                "Proceed to Version & Publish",
-                "Version & Publish",
-                "proceed_rfm_to_publish",
+                "Proceed to Model Evaluation",
+                "Model Evaluation",
+                "proceed_rfm_to_evaluation",
             )
 
     # --------------------------------------------------------
-    # 14f. Version & Publish
-    # --------------------------------------------------------
-    elif navigation == "Version & Publish":
-        render_pipeline_breadcrumb()
-
-        st.header("Version & Publish")
-        st.write(
-            "Publish approved customer-retention outputs to governed "
-            "reporting locations."
-        )
-
-        if (
-            not st.session_state.rfm_complete
-            or st.session_state.rfm_data is None
-            or st.session_state.cleaned_data is None
-        ):
-            st.warning(
-                "Complete the pipeline through RFM Feature Engineering "
-                "before publishing."
-            )
-
-        else:
-            rfm_df = st.session_state.rfm_data
-
-            duplicate_customers = int(
-                rfm_df["Customer ID"].duplicated().sum()
-            )
-            missing_rfm = int(
-                rfm_df[["Recency", "Frequency", "Monetary"]]
-                .isna()
-                .sum()
-                .sum()
-            )
-
-            model_reviewed = bool(
-                st.session_state.get("model_reviewed", False)
-            )
-
-            readiness_df = pd.DataFrame(
-                {
-                    "Check": [
-                        "Cleaning Complete",
-                        "RFM Complete",
-                        "Duplicate Customer IDs",
-                        "Missing RFM Values",
-                        "Model CV Artifact",
-                        "Temporal Prediction Artifact",
-                        "Model Evaluation Reviewed",
-                    ],
-                    "Status": [
-                        "PASS",
-                        "PASS",
-                        "PASS" if duplicate_customers == 0 else "FAIL",
-                        "PASS" if missing_rfm == 0 else "FAIL",
-                        "PASS"
-                        if (
-                            MODEL_ARTIFACT_DIR / "model_cv_results.csv"
-                        ).exists()
-                        else "FAIL",
-                        "PASS"
-                        if (
-                            MODEL_ARTIFACT_DIR
-                            / "temporal_test_predictions.csv"
-                        ).exists()
-                        else "FAIL",
-                        "PASS" if model_reviewed else "FAIL",
-                    ],
-                }
-            )
-
-            st.subheader("Publication Readiness")
-            st.dataframe(
-                readiness_df, width="stretch", hide_index=True
-            )
-
-            if not model_reviewed:
-                st.info(
-                    "Open the Model Evaluation section to review the "
-                    "model comparison, confusion matrix and selected "
-                    "model before publishing."
-                )
-
-            ready = bool(readiness_df["Status"].eq("PASS").all())
-
-            if ready and st.button(
-                "Publish Approved Outputs", type="primary"
-            ):
-                try:
-                    with loading_overlay(
-                        "Writing the governed team outputs and Power BI "
-                        "hand-off datasets."
-                    ):
-                        (
-                            published_rfm,
-                            publication_summary,
-                        ) = publish_pipeline_outputs(
-                            cleaned_df=st.session_state.cleaned_data,
-                            rfm_df=st.session_state.rfm_data,
-                            source_filename=(
-                                st.session_state.uploaded_filename
-                                or "Unknown"
-                            ),
-                            username=user_name,
-                            validation_results=(
-                                st.session_state.validation_results
-                            ),
-                            cleaning_steps=(
-                                st.session_state.cleaning_steps
-                            ),
-                        )
-
-                    st.session_state.published_rfm_data = published_rfm
-                    st.session_state.publication_summary = (
-                        publication_summary
-                    )
-                    st.session_state.published_at = publication_summary[
-                        "publication_time"
-                    ]
-                    st.session_state.publication_complete = True
-
-                    log_audit_event(
-                        username=user_name,
-                        role=user_role,
-                        action="Approved outputs published",
-                        stage="Version & Publish",
-                        status="SUCCESS",
-                        source_file=(
-                            st.session_state.uploaded_filename or ""
-                        ),
-                        publication_version=publication_summary[
-                            "publication_version"
-                        ],
-                        details=(
-                            f"Published "
-                            f"{publication_summary['rfm_rows']:,} "
-                            f"customers; high-value at risk="
-                            f"{publication_summary['high_value_at_risk']:,}."
-                        ),
-                    )
-
-                    st.success(
-                        "Approved outputs published successfully."
-                    )
-
-                except (FileNotFoundError, ValueError, IOError) as publish_error:
-                    st.session_state.publication_complete = False
-
-                    log_audit_event(
-                        username=user_name,
-                        role=user_role,
-                        action="Publication attempted",
-                        stage="Version & Publish",
-                        status="FAILED",
-                        source_file=(
-                            st.session_state.uploaded_filename or ""
-                        ),
-                        details=str(publish_error),
-                    )
-
-                    st.error(f"Publication failed: {publish_error}")
-
-            elif not ready:
-                st.error(
-                    "Publication readiness checks failed. Resolve the "
-                    "reported issues before publishing."
-                )
-
-            if (
-                st.session_state.publication_complete
-                and st.session_state.publication_summary is not None
-                and st.session_state.published_rfm_data is not None
-            ):
-                publication_summary = st.session_state.publication_summary
-                published_rfm = st.session_state.published_rfm_data
-
-                st.divider()
-                st.subheader("Latest Publication")
-
-                pub_top1, pub_top2 = st.columns(2)
-                pub_top1.metric(
-                    "Publication Version",
-                    publication_summary["publication_version"],
-                )
-                pub_top2.metric(
-                    "Published Customers",
-                    f"{publication_summary['rfm_rows']:,}",
-                )
-
-                pub_bottom1, pub_bottom2 = st.columns(2)
-                pub_bottom1.metric(
-                    "High-Value At Risk",
-                    f"{publication_summary['high_value_at_risk']:,}",
-                )
-                pub_bottom2.metric(
-                    "Published By",
-                    publication_summary["published_by"],
-                )
-
-                st.caption(
-                    f"Data period: "
-                    f"{format_business_date(publication_summary.get('data_start_date'))} "
-                    f"to "
-                    f"{format_business_date(publication_summary.get('data_through_date'))} "
-                    f"| Published: {publication_summary['publication_time']} "
-                    f"| Source: {publication_summary['source_filename']}"
-                )
-
-                st.subheader("Published Priority Distribution")
-                st.dataframe(
-                    publication_summary["priority_counts"],
-                    width="stretch",
-                    hide_index=True,
-                )
-
-                st.subheader("Published Files")
-                published_files = pd.DataFrame(
-                    {
-                        "Output": [
-                            "Clean Transactions",
-                            "Customer RFM",
-                            "Customer Summary",
-                            "Data Validation Report",
-                            "Final Customer Risk Prediction",
-                            "Invoice Summary",
-                            "RFM Customer Features",
-                        ],
-                        "File": [
-                            Path(
-                                publication_summary["team_paths"][key]
-                            ).name
-                            for key in [
-                                "clean_transactions",
-                                "customer_rfm",
-                                "customer_summary",
-                                "data_validation_report",
-                                "final_customer_risk_prediction",
-                                "invoice_summary",
-                                "rfm_customer_features",
-                            ]
-                        ],
-                    }
-                )
-                st.dataframe(
-                    published_files,
-                    width="stretch",
-                    hide_index=True,
-                )
-
-                st.subheader("Published RFM Preview")
-                st.dataframe(published_rfm.head(20), width="stretch")
-
-                csv_data = published_rfm.to_csv(index=False).encode("utf-8")
-                st.download_button(
-                    label="Download Latest RFM Reporting Dataset",
-                    data=csv_data,
-                    file_name="latest_rfm_analysis_dataset.csv",
-                    mime="text/csv",
-                )
-
-                st.subheader("Predictive Evaluation Handoff")
-
-                p1, p2, p3 = st.columns(3)
-                p1.metric(
-                    "Temporal Test Customers",
-                    f"{publication_summary['temporal_rows']:,}",
-                )
-                p2.metric(
-                    "Predicted At Risk",
-                    f"{publication_summary['predicted_at_risk']:,}",
-                )
-                p3.metric(
-                    "Predicted Retained",
-                    f"{publication_summary['predicted_retained']:,}",
-                )
-
-                st.dataframe(
-                    publication_summary["predicted_counts"],
-                    width="stretch",
-                    hide_index=True,
-                )
-
-                st.success(
-                    "Power BI hand-off is ready. Use the governed "
-                    "outputs in outputs/published/power_bi/. "
-                    "Predictive labels are governed as 1 = At Risk and "
-                    "0 = Retained."
-                )
-
-                render_proceed_button(
-                    "Proceed to Model Evaluation",
-                    "Model Evaluation",
-                    "proceed_publish_to_evaluation",
-                )
-
-    # --------------------------------------------------------
-    # 14g. Model Evaluation
+    # 14f. Model Evaluation
     # --------------------------------------------------------
     elif navigation == "Model Evaluation":
         render_pipeline_breadcrumb()
@@ -3856,7 +3718,8 @@ if user_role == TECHNICAL_ROLE:
         st.header("Model Evaluation")
         st.write(
             "Review the comparative performance of the retention-risk "
-            "models and confirm which model was selected for deployment."
+            "models and confirm which model was selected before "
+            "publication."
         )
 
         # Mark the model as reviewed for governance purposes as soon
@@ -3884,12 +3747,13 @@ if user_role == TECHNICAL_ROLE:
             )
 
         else:
-            # --------- Cross-validated model comparison ---------
             st.subheader("Cross-Validated Model Comparison")
 
             cv_df = pd.read_csv(cv_path)
 
-            def _find_column(df: pd.DataFrame, candidates: set[str]) -> Optional[str]:
+            def _find_column(
+                df: pd.DataFrame, candidates: set[str]
+            ) -> Optional[str]:
                 for column in df.columns:
                     if column.strip().lower() in candidates:
                         return column
@@ -4050,7 +3914,6 @@ if user_role == TECHNICAL_ROLE:
 
             st.divider()
 
-            # --------- Temporal test set distribution ---------
             st.subheader("Temporal Test Set Prediction Distribution")
 
             temporal_df = pd.read_csv(temporal_path)
@@ -4137,7 +4000,6 @@ if user_role == TECHNICAL_ROLE:
 
             st.divider()
 
-            # --------- Confusion matrix and derived metrics ---------
             st.subheader("Confusion Matrix and Derived Metrics")
 
             if not confusion_path.exists() or not metrics_path.exists():
@@ -4256,7 +4118,6 @@ if user_role == TECHNICAL_ROLE:
 
             st.divider()
 
-            # --------- Download bundle ---------
             st.subheader("Model Evaluation Bundle")
 
             bundle_placeholder = st.empty()
@@ -4296,7 +4157,6 @@ if user_role == TECHNICAL_ROLE:
 
             st.divider()
 
-            # --------- Deployed model summary ---------
             st.subheader("Deployed Model Summary")
 
             summary_rows = [
@@ -4318,7 +4178,7 @@ if user_role == TECHNICAL_ROLE:
                 },
                 {
                     "Attribute": "Deployment Status",
-                    "Value": "Deployed and used by all published outputs",
+                    "Value": "Approved for publication",
                 },
                 {
                     "Attribute": "Governance Note",
@@ -4342,6 +4202,311 @@ if user_role == TECHNICAL_ROLE:
                 "app, and the resulting artifacts are loaded here for "
                 "transparency and audit purposes."
             )
+
+            render_proceed_button(
+                "Proceed to Version & Publish",
+                "Version & Publish",
+                "proceed_evaluation_to_publish",
+            )
+
+    # --------------------------------------------------------
+    # 14g. Version & Publish
+    # --------------------------------------------------------
+    elif navigation == "Version & Publish":
+        render_pipeline_breadcrumb()
+
+        st.header("Version & Publish")
+        st.write(
+            "Publish approved customer-retention outputs to governed "
+            "reporting locations."
+        )
+
+        if (
+            not st.session_state.rfm_complete
+            or st.session_state.rfm_data is None
+            or st.session_state.cleaned_data is None
+        ):
+            st.warning(
+                "Complete the pipeline through RFM Feature Engineering "
+                "before publishing."
+            )
+
+        else:
+            rfm_df = st.session_state.rfm_data
+
+            duplicate_customers = int(
+                rfm_df["Customer ID"].duplicated().sum()
+            )
+            missing_rfm = int(
+                rfm_df[["Recency", "Frequency", "Monetary"]]
+                .isna()
+                .sum()
+                .sum()
+            )
+
+            model_reviewed = bool(
+                st.session_state.get("model_reviewed", False)
+            )
+
+            readiness_df = pd.DataFrame(
+                {
+                    "Check": [
+                        "Cleaning Complete",
+                        "RFM Complete",
+                        "Duplicate Customer IDs",
+                        "Missing RFM Values",
+                        "Model CV Artifact",
+                        "Temporal Prediction Artifact",
+                        "Model Evaluation Reviewed",
+                    ],
+                    "Status": [
+                        "PASS",
+                        "PASS",
+                        "PASS" if duplicate_customers == 0 else "FAIL",
+                        "PASS" if missing_rfm == 0 else "FAIL",
+                        "PASS"
+                        if (
+                            MODEL_ARTIFACT_DIR / "model_cv_results.csv"
+                        ).exists()
+                        else "FAIL",
+                        "PASS"
+                        if (
+                            MODEL_ARTIFACT_DIR
+                            / "temporal_test_predictions.csv"
+                        ).exists()
+                        else "FAIL",
+                        "PASS" if model_reviewed else "FAIL",
+                    ],
+                }
+            )
+
+            st.subheader("Publication Readiness")
+            st.dataframe(
+                readiness_df, width="stretch", hide_index=True
+            )
+
+            if not model_reviewed:
+                st.info(
+                    "Open the Model Evaluation section to review the "
+                    "model comparison, confusion matrix and selected "
+                    "model before publishing."
+                )
+
+            ready = bool(readiness_df["Status"].eq("PASS").all())
+
+            if ready and st.button(
+                "Publish Approved Outputs", type="primary"
+            ):
+                try:
+                    with loading_overlay(
+                        "Writing the governed team outputs and Power BI "
+                        "hand-off datasets."
+                    ):
+                        (
+                            published_rfm,
+                            publication_summary,
+                        ) = publish_pipeline_outputs(
+                            cleaned_df=st.session_state.cleaned_data,
+                            rfm_df=st.session_state.rfm_data,
+                            source_filename=(
+                                st.session_state.uploaded_filename
+                                or "Unknown"
+                            ),
+                            username=user_name,
+                            validation_results=(
+                                st.session_state.validation_results
+                            ),
+                            cleaning_steps=(
+                                st.session_state.cleaning_steps
+                            ),
+                        )
+
+                    st.session_state.published_rfm_data = published_rfm
+                    st.session_state.publication_summary = (
+                        publication_summary
+                    )
+                    st.session_state.published_at = publication_summary[
+                        "publication_time"
+                    ]
+                    st.session_state.publication_complete = True
+
+                    log_audit_event(
+                        username=user_name,
+                        role=user_role,
+                        action="Approved outputs published",
+                        stage="Version & Publish",
+                        status="SUCCESS",
+                        source_file=(
+                            st.session_state.uploaded_filename or ""
+                        ),
+                        publication_version=publication_summary[
+                            "publication_version"
+                        ],
+                        details=(
+                            f"Published "
+                            f"{publication_summary['rfm_rows']:,} "
+                            f"customers; high-value at risk="
+                            f"{publication_summary['high_value_at_risk']:,}."
+                        ),
+                    )
+
+                    st.success(
+                        "Approved outputs published successfully."
+                    )
+
+                except (
+                    FileNotFoundError,
+                    ValueError,
+                    IOError,
+                ) as publish_error:
+                    st.session_state.publication_complete = False
+
+                    log_audit_event(
+                        username=user_name,
+                        role=user_role,
+                        action="Publication attempted",
+                        stage="Version & Publish",
+                        status="FAILED",
+                        source_file=(
+                            st.session_state.uploaded_filename or ""
+                        ),
+                        details=str(publish_error),
+                    )
+
+                    st.error(f"Publication failed: {publish_error}")
+
+            elif not ready:
+                st.error(
+                    "Publication readiness checks failed. Resolve the "
+                    "reported issues before publishing."
+                )
+
+            if (
+                st.session_state.publication_complete
+                and st.session_state.publication_summary is not None
+                and st.session_state.published_rfm_data is not None
+            ):
+                publication_summary = st.session_state.publication_summary
+                published_rfm = st.session_state.published_rfm_data
+
+                st.divider()
+                st.subheader("Latest Publication")
+
+                pub_top1, pub_top2 = st.columns(2)
+                pub_top1.metric(
+                    "Publication Version",
+                    publication_summary["publication_version"],
+                )
+                pub_top2.metric(
+                    "Published Customers",
+                    f"{publication_summary['rfm_rows']:,}",
+                )
+
+                pub_bottom1, pub_bottom2 = st.columns(2)
+                pub_bottom1.metric(
+                    "High-Value At Risk",
+                    f"{publication_summary['high_value_at_risk']:,}",
+                )
+                pub_bottom2.metric(
+                    "Published By",
+                    publication_summary["published_by"],
+                )
+
+                st.caption(
+                    f"Data period: "
+                    f"{format_business_date(publication_summary.get('data_start_date'))} "
+                    f"to "
+                    f"{format_business_date(publication_summary.get('data_through_date'))} "
+                    f"| Published: {publication_summary['publication_time']} "
+                    f"| Source: {publication_summary['source_filename']}"
+                )
+
+                st.subheader("Published Priority Distribution")
+                st.dataframe(
+                    publication_summary["priority_counts"],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+                st.subheader("Published Files")
+                published_files = pd.DataFrame(
+                    {
+                        "Output": [
+                            "Clean Transactions",
+                            "Customer RFM",
+                            "Customer Summary",
+                            "Data Validation Report",
+                            "Final Customer Risk Prediction",
+                            "Invoice Summary",
+                            "RFM Customer Features",
+                        ],
+                        "File": [
+                            Path(
+                                publication_summary["team_paths"][key]
+                            ).name
+                            for key in [
+                                "clean_transactions",
+                                "customer_rfm",
+                                "customer_summary",
+                                "data_validation_report",
+                                "final_customer_risk_prediction",
+                                "invoice_summary",
+                                "rfm_customer_features",
+                            ]
+                        ],
+                    }
+                )
+                st.dataframe(
+                    published_files,
+                    width="stretch",
+                    hide_index=True,
+                )
+
+                st.subheader("Published RFM Preview")
+                st.dataframe(published_rfm.head(20), width="stretch")
+
+                csv_data = published_rfm.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="Download Latest RFM Reporting Dataset",
+                    data=csv_data,
+                    file_name="latest_rfm_analysis_dataset.csv",
+                    mime="text/csv",
+                )
+
+                st.subheader("Predictive Evaluation Handoff")
+
+                p1, p2, p3 = st.columns(3)
+                p1.metric(
+                    "Temporal Test Customers",
+                    f"{publication_summary['temporal_rows']:,}",
+                )
+                p2.metric(
+                    "Predicted At Risk",
+                    f"{publication_summary['predicted_at_risk']:,}",
+                )
+                p3.metric(
+                    "Predicted Retained",
+                    f"{publication_summary['predicted_retained']:,}",
+                )
+
+                st.dataframe(
+                    publication_summary["predicted_counts"],
+                    width="stretch",
+                    hide_index=True,
+                )
+
+                st.success(
+                    "Power BI hand-off is ready. Use the governed "
+                    "outputs in outputs/published/power_bi/. "
+                    "Predictive labels are governed as 1 = At Risk and "
+                    "0 = Retained."
+                )
+
+                render_proceed_button(
+                    "Proceed to Audit Trail",
+                    "Audit Trail",
+                    "proceed_publish_to_audit",
+                )
 
     # --------------------------------------------------------
     # 14h. Audit Trail
@@ -4403,8 +4568,6 @@ if user_role == TECHNICAL_ROLE:
                 "User", user_options
             )
 
-            # Date range filter tolerates missing or malformed
-            # timestamps by falling back to the full range.
             parsed_timestamps = pd.to_datetime(
                 audit_df["Timestamp"], errors="coerce"
             )
@@ -4563,7 +4726,6 @@ if user_role == TECHNICAL_ROLE:
             ]
         )
 
-        # ---------------- Users ----------------
         with users_tab:
             st.subheader("Registered Users")
             st.dataframe(
@@ -4574,7 +4736,6 @@ if user_role == TECHNICAL_ROLE:
                 "it preserves historical accountability."
             )
 
-        # ---------------- Add User ----------------
         with add_tab:
             st.subheader("Add User")
 
@@ -4648,7 +4809,6 @@ if user_role == TECHNICAL_ROLE:
                         f"User could not be created: {user_error}"
                     )
 
-        # ---------------- Edit User ----------------
         with edit_tab:
             st.subheader("Edit User / Role")
 
@@ -4728,7 +4888,6 @@ if user_role == TECHNICAL_ROLE:
                             f"User could not be updated: {update_error}"
                         )
 
-        # ---------------- Activate / Deactivate ----------------
         with status_tab:
             st.subheader("Activate / Deactivate User")
 
@@ -4837,7 +4996,6 @@ if user_role == TECHNICAL_ROLE:
                             )
                             st.error(str(status_error))
 
-        # ---------------- Reset Password ----------------
         with password_tab:
             st.subheader("Reset User Password")
 
@@ -4905,7 +5063,6 @@ if user_role == TECHNICAL_ROLE:
                         )
                         st.error(str(password_error))
 
-        # ---------------- Remove User ----------------
         with remove_tab:
             st.subheader("Remove User")
             st.warning(
@@ -4984,6 +5141,53 @@ if user_role == TECHNICAL_ROLE:
 
 else:
 
+    # --------------------------------------------------------
+    # 15.0 Load published datasets with a loading overlay
+    # --------------------------------------------------------
+    # A fixed overlay is rendered first so the Streamlit white
+    # flash is never visible while the published CSVs are being
+    # resolved. The overlay is cleared in the finally block once
+    # the business workspace has finished loading.
+    _business_load_overlay = st.empty()
+    _business_load_overlay.markdown(
+        """
+        <div style="
+            position: fixed;
+            inset: 0;
+            z-index: 999999;
+            background: rgba(255,255,255,0.94);
+            display: flex;
+            align-items: center;
+            justify-content: center;">
+            <div style="
+                max-width: 440px;
+                padding: 1.7rem 2.1rem;
+                border-radius: 14px;
+                background: white;
+                border: 1px solid rgba(0,0,0,0.10);
+                box-shadow: 0 12px 35px rgba(0,0,0,0.15);
+                text-align: center;">
+                <div style="
+                    width: 44px;
+                    height: 44px;
+                    margin: 0 auto 0.9rem auto;
+                    border: 4px solid #e8ecf1;
+                    border-top-color: #1a5276;
+                    border-radius: 50%;
+                    animation: rni_spin 1s linear infinite;">
+                </div>
+                <div style="font-size:1.15rem;font-weight:700;color:#1a2a4a;">
+                    Loading business workspace
+                </div>
+                <div style="font-size:0.92rem;color:#555;margin-top:0.35rem;">
+                    Resolving the latest approved publication...
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     manifest_path = PUBLISH_DIR / "publication_manifest.csv"
     latest_rfm_path = PUBLISH_DIR / "latest_rfm_analysis_dataset.csv"
     latest_clean_path = PUBLISH_DIR / "latest_clean_transactions.csv"
@@ -4998,34 +5202,38 @@ else:
     business_transactions_df: Optional[pd.DataFrame] = None
     business_invoice_df: Optional[pd.DataFrame] = None
 
-    if manifest_path.exists():
-        try:
-            business_manifest = pd.read_csv(manifest_path)
-            if not business_manifest.empty:
-                latest_publication = business_manifest.iloc[-1].to_dict()
-        except (pd.errors.ParserError, OSError):
-            latest_publication = None
-
-    if latest_rfm_path.exists():
-        try:
-            business_rfm_df = safe_read_published_csv(latest_rfm_path)
-        except (pd.errors.ParserError, OSError):
-            business_rfm_df = None
-
     try:
-        business_customer_summary_df = safe_read_published_csv(
-            team_customer_summary_path
-        )
-        business_transactions_df = safe_read_published_csv(
-            team_clean_transactions_path
-        )
-        business_invoice_df = safe_read_published_csv(
-            team_invoice_summary_path
-        )
-    except (pd.errors.ParserError, OSError):
-        business_customer_summary_df = None
-        business_transactions_df = None
-        business_invoice_df = None
+        if manifest_path.exists():
+            try:
+                business_manifest = pd.read_csv(manifest_path)
+                if not business_manifest.empty:
+                    latest_publication = business_manifest.iloc[-1].to_dict()
+            except (pd.errors.ParserError, OSError):
+                latest_publication = None
+
+        if latest_rfm_path.exists():
+            try:
+                business_rfm_df = safe_read_published_csv(latest_rfm_path)
+            except (pd.errors.ParserError, OSError):
+                business_rfm_df = None
+
+        try:
+            business_customer_summary_df = safe_read_published_csv(
+                team_customer_summary_path
+            )
+            business_transactions_df = safe_read_published_csv(
+                team_clean_transactions_path
+            )
+            business_invoice_df = safe_read_published_csv(
+                team_invoice_summary_path
+            )
+        except (pd.errors.ParserError, OSError):
+            business_customer_summary_df = None
+            business_transactions_df = None
+            business_invoice_df = None
+
+    finally:
+        _business_load_overlay.empty()
 
     publication_available = bool(
         latest_publication is not None
@@ -5039,6 +5247,10 @@ else:
     # 15a. Pipeline Status
     # --------------------------------------------------------
     if navigation == "Pipeline Status":
+        _status_loading = render_inline_loading(
+            "Loading pipeline status..."
+        )
+
         st.header("Pipeline Status")
         st.write(
             "Business users have read-only access to the latest "
@@ -5047,6 +5259,7 @@ else:
         )
 
         if not publication_available:
+            _status_loading.empty()
             st.warning(
                 "No approved publication is currently available. A "
                 "Technical user must complete the controlled pipeline "
@@ -5110,6 +5323,7 @@ else:
                         "Data Validation",
                         "Data Cleaning",
                         "RFM Feature Engineering",
+                        "Model Evaluation",
                         "Version & Publish",
                         "Power BI Handoff",
                     ],
@@ -5118,10 +5332,12 @@ else:
                         "Completed",
                         "Completed",
                         "Completed",
+                        "Reviewed",
                         "Published",
                         "Ready",
                     ],
                     "Business Access": [
+                        "Read Only",
                         "Read Only",
                         "Read Only",
                         "Read Only",
@@ -5181,6 +5397,8 @@ else:
                 hide_index=True,
             )
 
+            _status_loading.empty()
+
             st.success(
                 "The latest approved reporting dataset is available. "
                 "Business access is read-only and technical processing "
@@ -5192,14 +5410,23 @@ else:
     # 15b. Quick Analytics
     # --------------------------------------------------------
     elif navigation == "Quick Analytics":
+        _quick_loading = render_inline_loading(
+            "Loading customer summary and transaction datasets..."
+        )
+
         st.header("Quick Analytics")
         st.write(
             "A lightweight business snapshot from the same approved "
-            "publication used by Power BI. The full executive "
-            "reporting experience remains in Power BI."
+            "publication used by Power BI."
+        )
+        st.caption(
+            "Deep insights, segment tier composition, priority "
+            "customer targeting, and the retention impact simulator "
+            "are available on the Power BI Dashboard."
         )
 
         if not publication_available:
+            _quick_loading.empty()
             st.warning(
                 "No approved publication is currently available. A "
                 "Technical user must publish the governed outputs "
@@ -5210,6 +5437,7 @@ else:
             business_customer_summary_df is None
             or business_customer_summary_df.empty
         ):
+            _quick_loading.empty()
             st.warning(
                 "The customer summary output is not available yet. "
                 "Republish the latest pipeline once to regenerate the "
@@ -5255,7 +5483,9 @@ else:
 
             # --------- Overview ---------
             with overview_tab:
-                total_customer_value = float(customer_view["Monetary"].sum())
+                total_customer_value = float(
+                    customer_view["Monetary"].sum()
+                )
                 total_customers = int(
                     customer_view["Customer ID"].nunique()
                 )
@@ -5285,7 +5515,9 @@ else:
                     top_customer_text = str(
                         int(float(customer_value_sorted.index[0]))
                     )
-                    top_customer_value = float(customer_value_sorted.iloc[0])
+                    top_customer_value = float(
+                        customer_value_sorted.iloc[0]
+                    )
 
                 country_revenue = (
                     customer_view.groupby("Country")["Monetary"]
@@ -5303,14 +5535,16 @@ else:
                     else 0.0
                 )
 
-                kpi_row1_col1, kpi_row1_col2, kpi_row1_col3 = st.columns(3)
+                kpi_row1_col1, kpi_row1_col2, kpi_row1_col3 = (
+                    st.columns(3)
+                )
                 kpi_row1_col1.metric(
                     "Total Customer Value",
                     f"£{total_customer_value:,.0f}",
                     help=(
-                        "Sum of customer lifetime value (Monetary) across "
-                        "all identifiable customers. Matches the Power BI "
-                        "reporting layer."
+                        "Sum of customer lifetime value (Monetary) "
+                        "across all identifiable customers. Matches "
+                        "the Power BI reporting layer."
                     ),
                 )
                 kpi_row1_col2.metric(
@@ -5321,7 +5555,9 @@ else:
                     "Orders", f"{invoice_count:,}"
                 )
 
-                kpi_row2_col1, kpi_row2_col2, kpi_row2_col3 = st.columns(3)
+                kpi_row2_col1, kpi_row2_col2, kpi_row2_col3 = (
+                    st.columns(3)
+                )
                 kpi_row2_col1.metric(
                     "Customers", f"{total_customers:,}"
                 )
@@ -5343,19 +5579,18 @@ else:
                 )
 
                 st.caption(
-                    "Total Customer Value is sourced from the approved "
-                    "customer_summary.csv publication (sum of Monetary per "
-                    "customer). Order counts are sourced from the completed "
-                    "sales transaction layer. Both are consistent with the "
-                    "Power BI reporting dataset."
+                    "Business summary only. Segment tier "
+                    "composition, priority customer targeting, and "
+                    "the retention impact simulator are available on "
+                    "the Power BI Dashboard."
                 )
 
             # --------- Products & Basket ---------
             with product_tab:
                 if sales.empty:
                     st.warning(
-                        "No completed-sale rows are available for product "
-                        "analysis."
+                        "No completed-sale rows are available for "
+                        "product analysis."
                     )
                 else:
                     sales["Revenue"] = pd.to_numeric(
@@ -5389,11 +5624,15 @@ else:
                         if PLOTLY_AVAILABLE:
                             try:
                                 fig_products = px.bar(
-                                    product_summary.sort_values("Revenue"),
+                                    product_summary.sort_values(
+                                        "Revenue"
+                                    ),
                                     x="Revenue",
                                     y="Description",
                                     orientation="h",
-                                    title="Top 10 Products by Revenue",
+                                    title=(
+                                        "Top 10 Products by Revenue"
+                                    ),
                                     labels={
                                         "Revenue": "Revenue (£)",
                                         "Description": "Product",
@@ -5424,12 +5663,15 @@ else:
                     st.divider()
                     st.subheader("Market Basket Analysis")
                     st.caption(
-                        "Apriori rules are calculated on completed sales "
-                        "at invoice level. Use looser thresholds for "
-                        "exploration, then tighten them for reporting."
+                        "Exploratory analysis only. Product affinity, "
+                        "cross-sell opportunity sizing, and revenue "
+                        "impact estimates are available on the Power "
+                        "BI Dashboard."
                     )
 
-                    mba_col1, mba_col2, mba_col3, mba_col4 = st.columns(4)
+                    mba_col1, mba_col2, mba_col3, mba_col4 = (
+                        st.columns(4)
+                    )
                     mba_support = mba_col1.number_input(
                         "Minimum support",
                         min_value=0.0005,
@@ -5464,8 +5706,8 @@ else:
                         "Run Market Basket Analysis", type="primary"
                     ):
                         with loading_overlay(
-                            "Finding frequently co-purchased products "
-                            "from completed-sale invoices."
+                            "Finding frequently co-purchased "
+                            "products from completed-sale invoices."
                         ):
                             rules, diagnostics = compute_market_basket(
                                 business_transactions_df,
@@ -5505,9 +5747,10 @@ else:
                     if st.session_state.mba_rules is not None:
                         if st.session_state.mba_rules.empty:
                             st.info(
-                                "No association rules met the selected "
-                                "thresholds. Try lower support/"
-                                "confidence or analyse more products."
+                                "No association rules met the "
+                                "selected thresholds. Try lower "
+                                "support/confidence or analyse more "
+                                "products."
                             )
                         else:
                             st.dataframe(
@@ -5518,6 +5761,14 @@ else:
 
             # --------- Geography ---------
             with geo_tab:
+                st.subheader("Customer Value by Country")
+                st.caption(
+                    "Geography summary — where customers are "
+                    "concentrated. For geographic drill-down, "
+                    "priority targeting, and retention scenarios, "
+                    "use the Power BI Dashboard."
+                )
+
                 country_source = customer_view.dropna(
                     subset=["Country"]
                 ).copy()
@@ -5550,14 +5801,6 @@ else:
                     geo_left, geo_right = st.columns([2, 1])
 
                     with geo_left:
-                        st.subheader("Customer Value by Country")
-                        st.caption(
-                            "Revenue is total customer lifetime value "
-                            "(Monetary) aggregated by the customer's "
-                            "primary country of record. Matches the Power "
-                            "BI reporting layer."
-                        )
-
                         if PLOTLY_AVAILABLE:
                             try:
                                 map_fig = px.choropleth(
@@ -5571,11 +5814,29 @@ else:
                                         "Customers": ":,",
                                         "AvgCustomerValue": ":,.2f",
                                     },
-                                    title="Global Customer Value Footprint",
+                                    color_continuous_scale="Blues",
+                                    title=(
+                                        "Customer Value Concentration"
+                                    ),
                                 )
                                 map_fig.update_layout(
-                                    height=520,
-                                    margin=dict(l=0, r=0, t=50, b=0),
+                                    height=560,
+                                    margin=dict(
+                                        l=0, r=0, t=50, b=0
+                                    ),
+                                    geo=dict(
+                                        showframe=False,
+                                        showcoastlines=True,
+                                        coastlinecolor=(
+                                            "rgba(120,120,120,0.35)"
+                                        ),
+                                        showcountries=True,
+                                        countrycolor=(
+                                            "rgba(120,120,120,0.25)"
+                                        ),
+                                        landcolor="#f7f9fc",
+                                        bgcolor="rgba(0,0,0,0)",
+                                    ),
                                 )
                                 st.plotly_chart(
                                     map_fig, width="stretch"
@@ -5594,24 +5855,39 @@ else:
                             )
 
                     with geo_right:
-                        st.subheader("Top Countries")
+                        st.caption("Top Countries")
                         st.dataframe(
                             country_summary.head(10),
                             width="stretch",
                             hide_index=True,
                         )
 
+                    st.caption(
+                        "Colour intensity reflects total customer "
+                        "value per country. The table on the right "
+                        "shows the same figures numerically. Deeper "
+                        "geographic analysis, including priority "
+                        "customer drill-down by country, is available "
+                        "on the Power BI Dashboard."
+                    )
+
             st.divider()
             st.info(
-                "Quick Analytics is intentionally lightweight. Use the "
-                "Power BI Dashboard for the full executive, retention "
-                "and scenario-analysis experience."
+                "Quick Analytics is intentionally lightweight. Use "
+                "the Power BI Dashboard for the full executive, "
+                "retention and scenario-analysis experience."
             )
+
+            _quick_loading.empty()
 
     # --------------------------------------------------------
     # 15c. Power BI Dashboard
     # --------------------------------------------------------
     elif navigation == "Power BI Dashboard":
+        _pbi_loading = render_inline_loading(
+            "Loading Power BI access..."
+        )
+
         st.header("Power BI Dashboard")
         st.write(
             "Access the approved customer-retention reporting layer. "
@@ -5619,6 +5895,7 @@ else:
         )
 
         if not publication_available:
+            _pbi_loading.empty()
             st.warning(
                 "The reporting layer is not ready because no approved "
                 "publication is currently available."
@@ -5739,3 +6016,5 @@ else:
                 "Reporting source: "
                 "outputs/published/latest_rfm_analysis_dataset.csv"
             )
+
+            _pbi_loading.empty()
