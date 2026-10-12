@@ -1280,7 +1280,9 @@ def calculate_data_quality_score(
 def read_csv_cached(path_text: str, modified_time: int) -> pd.DataFrame:
     """Cache a CSV read keyed by path and modification time."""
     del modified_time  # used only for cache invalidation
-    return pd.read_csv(path_text)
+    return pd.read_csv(
+        path_text, dtype={"Invoice": "string", "StockCode": "string"}
+    )
 
 
 def safe_read_published_csv(path: Path) -> Optional[pd.DataFrame]:
@@ -1726,7 +1728,11 @@ def load_uploaded_data(
     filename = uploaded_file.name.lower()
 
     if filename.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(uploaded_file.getvalue()))
+        # Identifiers may contain letters; preserve them as text before preview.
+        return pd.read_csv(
+            io.BytesIO(uploaded_file.getvalue()),
+            dtype={"Invoice": "string", "StockCode": "string"},
+        )
 
     if not filename.endswith(".xlsx"):
         raise ValueError(
@@ -1741,6 +1747,7 @@ def load_uploaded_data(
     sheets = pd.read_excel(
         io.BytesIO(uploaded_file.getvalue()),
         sheet_name=list(selected_sheets),
+        dtype={"Invoice": "string", "StockCode": "string"},
     )
 
     if len(sheets) == 0:
@@ -5181,425 +5188,425 @@ else:
                 "users."
             )
 
-  # --------------------------------------------------------
-# 15b. Quick Analytics
-# --------------------------------------------------------
-elif navigation == "Quick Analytics":
-    st.header("Quick Analytics")
-    st.write(
-        "A lightweight business snapshot from the same approved "
-        "publication used by Power BI. The full executive "
-        "reporting experience remains in Power BI."
-    )
-
-    if not publication_available:
-        st.warning(
-            "No approved publication is currently available. A "
-            "Technical user must publish the governed outputs "
-            "first."
+    # --------------------------------------------------------
+    # 15b. Quick Analytics
+    # --------------------------------------------------------
+    elif navigation == "Quick Analytics":
+        st.header("Quick Analytics")
+        st.write(
+            "A lightweight business snapshot from the same approved "
+            "publication used by Power BI. The full executive "
+            "reporting experience remains in Power BI."
         )
 
-    elif (
-        business_customer_summary_df is None
-        or business_customer_summary_df.empty
-    ):
-        st.warning(
-            "The customer summary output is not available yet. "
-            "Republish the latest pipeline once to regenerate the "
-            "seven team datasets."
-        )
-
-    else:
-        customer_view = business_customer_summary_df.copy()
-
-        if "Country" in customer_view.columns:
-            customer_view["Country"] = standardise_country_names(
-                customer_view["Country"]
+        if not publication_available:
+            st.warning(
+                "No approved publication is currently available. A "
+                "Technical user must publish the governed outputs "
+                "first."
             )
 
-        customer_view["Monetary"] = pd.to_numeric(
-            customer_view["Monetary"], errors="coerce"
-        ).fillna(0)
-
-        sales = completed_sales_view(business_transactions_df)
-
-        data_start, data_through = resolve_publication_data_period(
-            latest_publication, business_transactions_df
-        )
-        quick_publication_time = str(
-            latest_publication.get(
-                "PublicationTimestamp", "Unavailable"
-            )
-        )
-        quick_source_file = str(
-            latest_publication.get("SourceFile", "Unavailable")
-        )
-
-        st.caption(
-            f"Data period: {format_business_date(data_start)} "
-            f"to {format_business_date(data_through)} | "
-            f"Published: {quick_publication_time} | Source: "
-            f"{quick_source_file}"
-        )
-
-        overview_tab, product_tab, geo_tab = st.tabs(
-            ["Overview", "Products & Basket", "Geography"]
-        )
-
-        # --------- Overview ---------
-        with overview_tab:
-            total_customer_value = float(customer_view["Monetary"].sum())
-            total_customers = int(
-                customer_view["Customer ID"].nunique()
+        elif (
+            business_customer_summary_df is None
+            or business_customer_summary_df.empty
+        ):
+            st.warning(
+                "The customer summary output is not available yet. "
+                "Republish the latest pipeline once to regenerate the "
+                "seven team datasets."
             )
 
-            if not sales.empty:
-                sales["Revenue"] = pd.to_numeric(
-                    sales["Revenue"], errors="coerce"
-                ).fillna(0)
-                invoice_count = int(sales["Invoice"].nunique())
-            else:
-                invoice_count = 0
+        else:
+            customer_view = business_customer_summary_df.copy()
 
-            average_order_value = (
-                total_customer_value / invoice_count
-                if invoice_count
-                else 0.0
-            )
-
-            top_customer_text = "Unavailable"
-            top_customer_value = 0.0
-            customer_value_sorted = (
-                customer_view.groupby("Customer ID")["Monetary"]
-                .sum()
-                .sort_values(ascending=False)
-            )
-            if not customer_value_sorted.empty:
-                top_customer_text = str(
-                    int(float(customer_value_sorted.index[0]))
+            if "Country" in customer_view.columns:
+                customer_view["Country"] = standardise_country_names(
+                    customer_view["Country"]
                 )
-                top_customer_value = float(customer_value_sorted.iloc[0])
 
-            country_revenue = (
-                customer_view.groupby("Country")["Monetary"]
-                .sum()
-                .sort_values(ascending=False)
-            )
-            top_country = (
-                str(country_revenue.index[0])
-                if not country_revenue.empty
-                else "Unavailable"
-            )
-            top_country_value = (
-                float(country_revenue.iloc[0])
-                if not country_revenue.empty
-                else 0.0
-            )
+            customer_view["Monetary"] = pd.to_numeric(
+                customer_view["Monetary"], errors="coerce"
+            ).fillna(0)
 
-            kpi_row1_col1, kpi_row1_col2, kpi_row1_col3 = st.columns(3)
-            kpi_row1_col1.metric(
-                "Total Customer Value",
-                f"£{total_customer_value:,.0f}",
-                help=(
-                    "Sum of customer lifetime value (Monetary) across "
-                    "all identifiable customers. Matches the Power BI "
-                    "reporting layer."
-                ),
-            )
-            kpi_row1_col2.metric(
-                "Average Order Value",
-                f"£{average_order_value:,.2f}",
-            )
-            kpi_row1_col3.metric(
-                "Orders", f"{invoice_count:,}"
-            )
+            sales = completed_sales_view(business_transactions_df)
 
-            kpi_row2_col1, kpi_row2_col2, kpi_row2_col3 = st.columns(3)
-            kpi_row2_col1.metric(
-                "Customers", f"{total_customers:,}"
+            data_start, data_through = resolve_publication_data_period(
+                latest_publication, business_transactions_df
             )
-            kpi_row2_col2.metric(
-                "Top Customer",
-                top_customer_text,
-                help=(
-                    "Lifetime value: "
-                    f"£{top_customer_value:,.2f}"
-                ),
+            quick_publication_time = str(
+                latest_publication.get(
+                    "PublicationTimestamp", "Unavailable"
+                )
             )
-            kpi_row2_col3.metric(
-                "Top Country",
-                top_country,
-                help=(
-                    "Customer value: "
-                    f"£{top_country_value:,.2f}"
-                ),
+            quick_source_file = str(
+                latest_publication.get("SourceFile", "Unavailable")
             )
 
             st.caption(
-                "Total Customer Value is sourced from the approved "
-                "customer_summary.csv publication (sum of Monetary per "
-                "customer). Order counts are sourced from the completed "
-                "sales transaction layer. Both are consistent with the "
-                "Power BI reporting dataset."
+                f"Data period: {format_business_date(data_start)} "
+                f"to {format_business_date(data_through)} | "
+                f"Published: {quick_publication_time} | Source: "
+                f"{quick_source_file}"
             )
 
-        # --------- Products & Basket ---------
-        with product_tab:
-            if sales.empty:
-                st.warning(
-                    "No completed-sale rows are available for product "
-                    "analysis."
-                )
-            else:
-                sales["Revenue"] = pd.to_numeric(
-                    sales["Revenue"], errors="coerce"
-                ).fillna(0)
+            overview_tab, product_tab, geo_tab = st.tabs(
+                ["Overview", "Products & Basket", "Geography"]
+            )
 
-                product_summary = (
-                    sales.dropna(subset=["Description"])
-                    .groupby("Description")
-                    .agg(
-                        Quantity=("Quantity", "sum"),
-                        Revenue=("Revenue", "sum"),
-                        Orders=("Invoice", "nunique"),
-                    )
-                    .sort_values("Revenue", ascending=False)
-                    .head(10)
-                    .reset_index()
+            # --------- Overview ---------
+            with overview_tab:
+                total_customer_value = float(customer_view["Monetary"].sum())
+                total_customers = int(
+                    customer_view["Customer ID"].nunique()
                 )
 
-                if not product_summary.empty:
-                    top_product = product_summary.iloc[0]
-                    st.metric(
-                        "Top Revenue Product",
-                        str(top_product["Description"]),
-                        help=(
-                            f"Revenue: "
-                            f"£{float(top_product['Revenue']):,.2f}"
-                        ),
+                if not sales.empty:
+                    sales["Revenue"] = pd.to_numeric(
+                        sales["Revenue"], errors="coerce"
+                    ).fillna(0)
+                    invoice_count = int(sales["Invoice"].nunique())
+                else:
+                    invoice_count = 0
+
+                average_order_value = (
+                    total_customer_value / invoice_count
+                    if invoice_count
+                    else 0.0
+                )
+
+                top_customer_text = "Unavailable"
+                top_customer_value = 0.0
+                customer_value_sorted = (
+                    customer_view.groupby("Customer ID")["Monetary"]
+                    .sum()
+                    .sort_values(ascending=False)
+                )
+                if not customer_value_sorted.empty:
+                    top_customer_text = str(
+                        int(float(customer_value_sorted.index[0]))
+                    )
+                    top_customer_value = float(customer_value_sorted.iloc[0])
+
+                country_revenue = (
+                    customer_view.groupby("Country")["Monetary"]
+                    .sum()
+                    .sort_values(ascending=False)
+                )
+                top_country = (
+                    str(country_revenue.index[0])
+                    if not country_revenue.empty
+                    else "Unavailable"
+                )
+                top_country_value = (
+                    float(country_revenue.iloc[0])
+                    if not country_revenue.empty
+                    else 0.0
+                )
+
+                kpi_row1_col1, kpi_row1_col2, kpi_row1_col3 = st.columns(3)
+                kpi_row1_col1.metric(
+                    "Total Customer Value",
+                    f"£{total_customer_value:,.0f}",
+                    help=(
+                        "Sum of customer lifetime value (Monetary) across "
+                        "all identifiable customers. Matches the Power BI "
+                        "reporting layer."
+                    ),
+                )
+                kpi_row1_col2.metric(
+                    "Average Order Value",
+                    f"£{average_order_value:,.2f}",
+                )
+                kpi_row1_col3.metric(
+                    "Orders", f"{invoice_count:,}"
+                )
+
+                kpi_row2_col1, kpi_row2_col2, kpi_row2_col3 = st.columns(3)
+                kpi_row2_col1.metric(
+                    "Customers", f"{total_customers:,}"
+                )
+                kpi_row2_col2.metric(
+                    "Top Customer",
+                    top_customer_text,
+                    help=(
+                        "Lifetime value: "
+                        f"£{top_customer_value:,.2f}"
+                    ),
+                )
+                kpi_row2_col3.metric(
+                    "Top Country",
+                    top_country,
+                    help=(
+                        "Customer value: "
+                        f"£{top_country_value:,.2f}"
+                    ),
+                )
+
+                st.caption(
+                    "Total Customer Value is sourced from the approved "
+                    "customer_summary.csv publication (sum of Monetary per "
+                    "customer). Order counts are sourced from the completed "
+                    "sales transaction layer. Both are consistent with the "
+                    "Power BI reporting dataset."
+                )
+
+            # --------- Products & Basket ---------
+            with product_tab:
+                if sales.empty:
+                    st.warning(
+                        "No completed-sale rows are available for product "
+                        "analysis."
+                    )
+                else:
+                    sales["Revenue"] = pd.to_numeric(
+                        sales["Revenue"], errors="coerce"
+                    ).fillna(0)
+
+                    product_summary = (
+                        sales.dropna(subset=["Description"])
+                        .groupby("Description")
+                        .agg(
+                            Quantity=("Quantity", "sum"),
+                            Revenue=("Revenue", "sum"),
+                            Orders=("Invoice", "nunique"),
+                        )
+                        .sort_values("Revenue", ascending=False)
+                        .head(10)
+                        .reset_index()
                     )
 
-                    if PLOTLY_AVAILABLE:
-                        try:
-                            fig_products = px.bar(
-                                product_summary.sort_values("Revenue"),
-                                x="Revenue",
-                                y="Description",
-                                orientation="h",
-                                title="Top 10 Products by Revenue",
-                                labels={
-                                    "Revenue": "Revenue (£)",
-                                    "Description": "Product",
-                                },
-                            )
-                            fig_products.update_layout(
-                                height=480,
-                                margin=dict(
-                                    l=10, r=10, t=50, b=10
-                                ),
-                            )
-                            st.plotly_chart(
-                                fig_products, width="stretch"
-                            )
-                        except (ValueError, KeyError):
+                    if not product_summary.empty:
+                        top_product = product_summary.iloc[0]
+                        st.metric(
+                            "Top Revenue Product",
+                            str(top_product["Description"]),
+                            help=(
+                                f"Revenue: "
+                                f"£{float(top_product['Revenue']):,.2f}"
+                            ),
+                        )
+
+                        if PLOTLY_AVAILABLE:
+                            try:
+                                fig_products = px.bar(
+                                    product_summary.sort_values("Revenue"),
+                                    x="Revenue",
+                                    y="Description",
+                                    orientation="h",
+                                    title="Top 10 Products by Revenue",
+                                    labels={
+                                        "Revenue": "Revenue (£)",
+                                        "Description": "Product",
+                                    },
+                                )
+                                fig_products.update_layout(
+                                    height=480,
+                                    margin=dict(
+                                        l=10, r=10, t=50, b=10
+                                    ),
+                                )
+                                st.plotly_chart(
+                                    fig_products, width="stretch"
+                                )
+                            except (ValueError, KeyError):
+                                st.dataframe(
+                                    product_summary,
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+                        else:
                             st.dataframe(
                                 product_summary,
                                 width="stretch",
                                 hide_index=True,
                             )
-                    else:
-                        st.dataframe(
-                            product_summary,
-                            width="stretch",
-                            hide_index=True,
-                        )
 
-                st.divider()
-                st.subheader("Market Basket Analysis")
-                st.caption(
-                    "Apriori rules are calculated on completed sales "
-                    "at invoice level. Use looser thresholds for "
-                    "exploration, then tighten them for reporting."
-                )
+                    st.divider()
+                    st.subheader("Market Basket Analysis")
+                    st.caption(
+                        "Apriori rules are calculated on completed sales "
+                        "at invoice level. Use looser thresholds for "
+                        "exploration, then tighten them for reporting."
+                    )
 
-                mba_col1, mba_col2, mba_col3, mba_col4 = st.columns(4)
-                mba_support = mba_col1.number_input(
-                    "Minimum support",
-                    min_value=0.0005,
-                    max_value=0.05,
-                    value=0.002,
-                    step=0.0005,
-                    format="%.4f",
-                )
-                mba_confidence = mba_col2.slider(
-                    "Minimum confidence",
-                    min_value=0.05,
-                    max_value=0.90,
-                    value=0.15,
-                    step=0.05,
-                )
-                mba_lift = mba_col3.slider(
-                    "Minimum lift",
-                    min_value=1.0,
-                    max_value=5.0,
-                    value=1.0,
-                    step=0.1,
-                )
-                mba_products = mba_col4.slider(
-                    "Products analysed",
-                    min_value=50,
-                    max_value=300,
-                    value=150,
-                    step=25,
-                )
+                    mba_col1, mba_col2, mba_col3, mba_col4 = st.columns(4)
+                    mba_support = mba_col1.number_input(
+                        "Minimum support",
+                        min_value=0.0005,
+                        max_value=0.05,
+                        value=0.002,
+                        step=0.0005,
+                        format="%.4f",
+                    )
+                    mba_confidence = mba_col2.slider(
+                        "Minimum confidence",
+                        min_value=0.05,
+                        max_value=0.90,
+                        value=0.15,
+                        step=0.05,
+                    )
+                    mba_lift = mba_col3.slider(
+                        "Minimum lift",
+                        min_value=1.0,
+                        max_value=5.0,
+                        value=1.0,
+                        step=0.1,
+                    )
+                    mba_products = mba_col4.slider(
+                        "Products analysed",
+                        min_value=50,
+                        max_value=300,
+                        value=150,
+                        step=25,
+                    )
 
-                if st.button(
-                    "Run Market Basket Analysis", type="primary"
-                ):
-                    with loading_overlay(
-                        "Finding frequently co-purchased products "
-                        "from completed-sale invoices."
+                    if st.button(
+                        "Run Market Basket Analysis", type="primary"
                     ):
-                        rules, diagnostics = compute_market_basket(
-                            business_transactions_df,
-                            min_support=mba_support,
-                            min_confidence=mba_confidence,
-                            min_lift=mba_lift,
-                            top_n_products=mba_products,
-                        )
-                    st.session_state.mba_rules = rules
-                    st.session_state.mba_diagnostics = diagnostics
+                        with loading_overlay(
+                            "Finding frequently co-purchased products "
+                            "from completed-sale invoices."
+                        ):
+                            rules, diagnostics = compute_market_basket(
+                                business_transactions_df,
+                                min_support=mba_support,
+                                min_confidence=mba_confidence,
+                                min_lift=mba_lift,
+                                top_n_products=mba_products,
+                            )
+                        st.session_state.mba_rules = rules
+                        st.session_state.mba_diagnostics = diagnostics
 
-                if st.session_state.mba_diagnostics is not None:
-                    diagnostics = st.session_state.mba_diagnostics
-                    diag_col1, diag_col2, diag_col3, diag_col4 = (
-                        st.columns(4)
-                    )
-                    diag_col1.metric(
-                        "Eligible Invoices",
-                        f"{diagnostics['eligible_invoices']:,}",
-                    )
-                    diag_col2.metric(
-                        "Products Analysed",
-                        f"{diagnostics['products_analysed']:,}",
-                    )
-                    diag_col3.metric(
-                        "Frequent Itemsets",
-                        f"{diagnostics['frequent_itemsets']:,}",
-                    )
-                    diag_col4.metric(
-                        "Rules Returned",
-                        f"{diagnostics['rules_after_lift']:,}",
-                    )
-                    st.caption(
-                        f"MBA status: {diagnostics['status']}"
-                    )
-
-                if st.session_state.mba_rules is not None:
-                    if st.session_state.mba_rules.empty:
-                        st.info(
-                            "No association rules met the selected "
-                            "thresholds. Try lower support/"
-                            "confidence or analyse more products."
+                    if st.session_state.mba_diagnostics is not None:
+                        diagnostics = st.session_state.mba_diagnostics
+                        diag_col1, diag_col2, diag_col3, diag_col4 = (
+                            st.columns(4)
                         )
-                    else:
-                        st.dataframe(
-                            st.session_state.mba_rules.head(50),
-                            width="stretch",
-                            hide_index=True,
+                        diag_col1.metric(
+                            "Eligible Invoices",
+                            f"{diagnostics['eligible_invoices']:,}",
+                        )
+                        diag_col2.metric(
+                            "Products Analysed",
+                            f"{diagnostics['products_analysed']:,}",
+                        )
+                        diag_col3.metric(
+                            "Frequent Itemsets",
+                            f"{diagnostics['frequent_itemsets']:,}",
+                        )
+                        diag_col4.metric(
+                            "Rules Returned",
+                            f"{diagnostics['rules_after_lift']:,}",
+                        )
+                        st.caption(
+                            f"MBA status: {diagnostics['status']}"
                         )
 
-        # --------- Geography ---------
-        with geo_tab:
-            country_source = customer_view.dropna(
-                subset=["Country"]
-            ).copy()
+                    if st.session_state.mba_rules is not None:
+                        if st.session_state.mba_rules.empty:
+                            st.info(
+                                "No association rules met the selected "
+                                "thresholds. Try lower support/"
+                                "confidence or analyse more products."
+                            )
+                        else:
+                            st.dataframe(
+                                st.session_state.mba_rules.head(50),
+                                width="stretch",
+                                hide_index=True,
+                            )
 
-            country_summary = (
-                country_source.groupby("Country")
-                .agg(
-                    Revenue=("Monetary", "sum"),
-                    Customers=("Customer ID", "nunique"),
-                    AvgCustomerValue=("Monetary", "mean"),
-                    Frequency=("Frequency", "sum"),
-                )
-                .reset_index()
-                .sort_values("Revenue", ascending=False)
-                .reset_index(drop=True)
-            )
+            # --------- Geography ---------
+            with geo_tab:
+                country_source = customer_view.dropna(
+                    subset=["Country"]
+                ).copy()
 
-            map_country_summary = country_summary.loc[
-                ~country_summary["Country"].isin(
-                    _COUNTRY_MAP_EXCLUSIONS
-                )
-            ].copy()
-
-            if country_summary.empty:
-                st.info(
-                    "No country information is available in the "
-                    "approved customer summary."
-                )
-            else:
-                geo_left, geo_right = st.columns([2, 1])
-
-                with geo_left:
-                    st.subheader("Customer Value by Country")
-                    st.caption(
-                        "Revenue is total customer lifetime value "
-                        "(Monetary) aggregated by the customer's "
-                        "primary country of record. Matches the Power "
-                        "BI reporting layer."
+                country_summary = (
+                    country_source.groupby("Country")
+                    .agg(
+                        Revenue=("Monetary", "sum"),
+                        Customers=("Customer ID", "nunique"),
+                        AvgCustomerValue=("Monetary", "mean"),
+                        Frequency=("Frequency", "sum"),
                     )
+                    .reset_index()
+                    .sort_values("Revenue", ascending=False)
+                    .reset_index(drop=True)
+                )
 
-                    if PLOTLY_AVAILABLE:
-                        try:
-                            map_fig = px.choropleth(
-                                map_country_summary,
-                                locations="Country",
-                                locationmode="country names",
-                                color="Revenue",
-                                hover_name="Country",
-                                hover_data={
-                                    "Revenue": ":,.2f",
-                                    "Customers": ":,",
-                                    "AvgCustomerValue": ":,.2f",
-                                },
-                                title="Global Customer Value Footprint",
-                            )
-                            map_fig.update_layout(
-                                height=520,
-                                margin=dict(l=0, r=0, t=50, b=0),
-                            )
-                            st.plotly_chart(
-                                map_fig, width="stretch"
-                            )
-                        except (ValueError, KeyError):
+                map_country_summary = country_summary.loc[
+                    ~country_summary["Country"].isin(
+                        _COUNTRY_MAP_EXCLUSIONS
+                    )
+                ].copy()
+
+                if country_summary.empty:
+                    st.info(
+                        "No country information is available in the "
+                        "approved customer summary."
+                    )
+                else:
+                    geo_left, geo_right = st.columns([2, 1])
+
+                    with geo_left:
+                        st.subheader("Customer Value by Country")
+                        st.caption(
+                            "Revenue is total customer lifetime value "
+                            "(Monetary) aggregated by the customer's "
+                            "primary country of record. Matches the Power "
+                            "BI reporting layer."
+                        )
+
+                        if PLOTLY_AVAILABLE:
+                            try:
+                                map_fig = px.choropleth(
+                                    map_country_summary,
+                                    locations="Country",
+                                    locationmode="country names",
+                                    color="Revenue",
+                                    hover_name="Country",
+                                    hover_data={
+                                        "Revenue": ":,.2f",
+                                        "Customers": ":,",
+                                        "AvgCustomerValue": ":,.2f",
+                                    },
+                                    title="Global Customer Value Footprint",
+                                )
+                                map_fig.update_layout(
+                                    height=520,
+                                    margin=dict(l=0, r=0, t=50, b=0),
+                                )
+                                st.plotly_chart(
+                                    map_fig, width="stretch"
+                                )
+                            except (ValueError, KeyError):
+                                st.dataframe(
+                                    country_summary,
+                                    width="stretch",
+                                    hide_index=True,
+                                )
+                        else:
                             st.dataframe(
                                 country_summary,
                                 width="stretch",
                                 hide_index=True,
                             )
-                    else:
+
+                    with geo_right:
+                        st.subheader("Top Countries")
                         st.dataframe(
-                            country_summary,
+                            country_summary.head(10),
                             width="stretch",
                             hide_index=True,
                         )
 
-                with geo_right:
-                    st.subheader("Top Countries")
-                    st.dataframe(
-                        country_summary.head(10),
-                        width="stretch",
-                        hide_index=True,
-                    )
-
-        st.divider()
-        st.info(
-            "Quick Analytics is intentionally lightweight. Use the "
-            "Power BI Dashboard for the full executive, retention "
-            "and scenario-analysis experience."
-        )
+            st.divider()
+            st.info(
+                "Quick Analytics is intentionally lightweight. Use the "
+                "Power BI Dashboard for the full executive, retention "
+                "and scenario-analysis experience."
+            )
 
     # --------------------------------------------------------
     # 15c. Power BI Dashboard
