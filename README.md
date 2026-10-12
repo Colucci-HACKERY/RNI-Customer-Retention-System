@@ -234,10 +234,10 @@ This project was developed as a group effort by a team of student analysts at th
 
 | Team Member | Contribution |
 |-------------|--------------|
-| Abale Moatshe | Data cleaning, RFM engineering, model evaluation |
+| Abale Moatshe | Data cleaning, RFM engineering, project documentation|
 | Elias Pako J. Mothibapula | Repository architecture, Streamlit application development, RFM algorithm implementation |
 | Jasmin Clotyda G. Khamfore | Project documentation, literature review, report writing |
-| Laone Sydney Akanyang | Data preparation, Power BI dashboard development, project documentation |
+| Laone Sydney Akanyang | Data preparation, Power BI dashboard development,  model evaluation |
 
 Supervisor: **Kagiso Motshidisi**
 
