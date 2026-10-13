@@ -165,6 +165,14 @@ _APP_CSS = """
 
 st.markdown(_APP_CSS, unsafe_allow_html=True)
 
+# Additional presentation styling. Core app behaviour remains unchanged.
+_STYLESHEET_PATH = Path(__file__).parent / "RNI_styles.css"
+if _STYLESHEET_PATH.is_file():
+    st.markdown(
+        "<style>" + _STYLESHEET_PATH.read_text(encoding="utf-8") + "</style>",
+        unsafe_allow_html=True,
+    )
+
 
 # ------------------------------------------------------------
 # 3. Filesystem paths and directory bootstrap
@@ -866,6 +874,17 @@ if not bool(user_data["is_active"]):
 user_role = str(user_data["role"]).lower()
 user_name = user_data["name"]
 
+# Role-aware presentation marker, not a permission or authentication control.
+_ROLE_MARKER = "rni-business-marker" if user_role == BUSINESS_ROLE else "rni-technical-marker"
+st.markdown(f'<span id="{_ROLE_MARKER}" style="display:none"></span>', unsafe_allow_html=True)
+
+st.sidebar.markdown(
+    '<div class="rni-sidebar-brand">'
+    '<div class="rni-sidebar-logo"><span>▥</span> RNI</div>'
+    '<div class="rni-sidebar-tagline">Customer Retention Analytics System</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
 st.sidebar.write(f"Logged in as **{user_name}**")
 st.sidebar.caption(f"Role: {user_role.title()}")
 
@@ -2881,10 +2900,21 @@ def publish_pipeline_outputs(
 # 14. Technical workspace
 # ============================================================
 
-st.title("RNI Customer Retention System")
-st.caption(
-    "Controlled data preparation, customer feature engineering "
-    "and Power BI hand-off."
+# Branded header switches descriptions by workspace without changing navigation.
+if user_role == TECHNICAL_ROLE:
+    _workspace_label = "TECHNICAL WORKSPACE"
+    _workspace_summary = "Controlled ingestion, validation, RFM modelling and publication to Power BI."
+else:
+    _workspace_label = "BUSINESS WORKSPACE"
+    _workspace_summary = "Read-only customer retention insights and approved Power BI reporting."
+
+st.markdown(
+    '<div class="rni-identity">'
+    f'<div class="rni-eyebrow">{_workspace_label}</div>'
+    '<div class="rni-identity-title">RNI Customer Retention System</div>'
+    f'<div class="rni-identity-subtitle">{_workspace_summary}</div>'
+    '</div>',
+    unsafe_allow_html=True,
 )
 
 

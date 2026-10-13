@@ -1,0 +1,180 @@
+/* RNI presentation theme; scoped to Streamlit's existing widgets.
+   Technical = navy/blue; Business = navy/teal. No data or RBAC logic. */
+:root { color-scheme: dark; }
+.stApp {
+    --rni-accent: #278CFA;
+    --rni-accent-hover: #1474DC;
+    --rni-edge: #223754;
+    --rni-card: #12223A;
+    --rni-soft: #93A9C7;
+    background: radial-gradient(ellipse at 93% -12%, #10294C 0%, #0B1424 33%, #090F1C 82%);
+    color: #EDF4FF;
+}
+.stApp:has(#rni-business-marker) {
+    --rni-accent: #13BD91;
+    --rni-accent-hover: #089F77;
+    --rni-edge: #1A4948;
+    --rni-card: #102D32;
+    --rni-soft: #9ABDB9;
+    background: radial-gradient(ellipse at 95% -5%, #103B38 0%, #0B1C22 38%, #09141D 86%);
+}
+.main .block-container,
+[data-testid="stMainBlockContainer"] {
+    max-width: 1530px;
+    padding-top: 1.75rem;
+    padding-bottom: 3rem;
+}
+section[data-testid="stSidebar"] {
+    background: #0A1B31;
+    border-right: 1px solid #244264;
+}
+.stApp:has(#rni-business-marker) section[data-testid="stSidebar"] {
+    background: #0A262A;
+    border-right-color: #225452;
+}
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    padding-top: 1.4rem;
+}
+section[data-testid="stSidebar"] [role="radiogroup"] label {
+    border-radius: 10px;
+    padding: 0.36rem 0.55rem;
+    margin-bottom: 0.1rem;
+    transition: background 0.15s ease;
+}
+section[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    background: rgba(112,174,238,0.10);
+}
+section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+    background: color-mix(in srgb, var(--rni-accent) 18%, transparent);
+    box-shadow: inset 3px 0 0 var(--rni-accent);
+}
+section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
+    color: #FFFFFF;
+    font-weight: 650;
+}
+h1 {
+    font-size: clamp(1.65rem, 2.25vw, 2.45rem) !important;
+    line-height: 1.18 !important;
+    letter-spacing: -0.035em;
+}
+h2 { font-size: 1.5rem !important; letter-spacing: -0.018em; }
+h3 { font-size: 1.14rem !important; }
+[data-testid="stCaptionContainer"], .stCaption {
+    color: var(--rni-soft) !important;
+}
+div[data-testid="stMetric"] {
+    background: linear-gradient(135deg, var(--rni-card), color-mix(in srgb, var(--rni-card) 85%, black));
+    border: 1px solid var(--rni-edge);
+    border-top: 2px solid color-mix(in srgb, var(--rni-accent) 55%, transparent);
+    border-radius: 15px;
+    padding: 1.05rem 1.15rem;
+    min-width: 0;
+    height: 100%;
+}
+div[data-testid="stMetricLabel"] p {
+    color: #B4C6DF !important;
+    font-size: 0.89rem;
+    font-weight: 550;
+}
+div[data-testid="stMetricValue"] {
+    font-weight: 750;
+    letter-spacing: -0.04em;
+    font-size: clamp(1.4rem, 2vw, 2.1rem);
+    overflow-wrap: anywhere;
+}
+div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
+    border-color: var(--rni-edge);
+}
+.stButton button, .stDownloadButton button, .stLinkButton a {
+    border-radius: 10px !important;
+    min-height: 2.65rem;
+    transition: filter .16s ease, border-color .16s ease;
+}
+.stButton button:hover, .stDownloadButton button:hover, .stLinkButton a:hover {
+    border-color: var(--rni-accent);
+    filter: brightness(1.08);
+}
+.stButton button[kind="primary"], .stDownloadButton button[kind="primary"],
+.stLinkButton a[kind="primary"] {
+    background: var(--rni-accent) !important;
+    border-color: var(--rni-accent) !important;
+    color: #FFFFFF !important;
+}
+.stApp:has(#rni-business-marker) .stButton button[kind="primary"],
+.stApp:has(#rni-business-marker) .stLinkButton a[kind="primary"] {
+    color: #06221E !important;
+}
+div[data-testid="stDataFrame"], div[data-testid="stTable"] {
+    border: 1px solid var(--rni-edge);
+    border-radius: 12px;
+    overflow: hidden;
+}
+div[data-testid="stAlert"] { border-radius: 12px; }
+div[data-testid="stFileUploader"] section {
+    border-radius: 12px;
+    border-color: var(--rni-edge);
+}
+.pipeline-breadcrumb {
+    color: #BDD0EA !important;
+    padding: 0.85rem 1rem !important;
+    border-radius: 11px !important;
+    background: var(--rni-card) !important;
+    border: 1px solid var(--rni-edge) !important;
+    overflow-wrap: anywhere;
+}
+.stApp:has(#rni-business-marker) .pipeline-breadcrumb { color: #B4D8D4 !important; }
+div[data-baseweb="tab-list"] { flex-wrap: wrap !important; gap: .45rem !important; }
+div[data-baseweb="tab-list"] button[role="tab"] {
+    flex: 1 1 calc(33.333% - .5rem) !important;
+    min-width: 180px !important;
+    max-width: calc(33.333% - .5rem) !important;
+    border-radius: 10px 10px 0 0;
+}
+div[data-baseweb="tab-list"] button[aria-selected="true"] {
+    border-bottom-color: var(--rni-accent) !important;
+}
+.rni-identity {
+    border: 1px solid var(--rni-edge);
+    border-radius: 15px;
+    padding: 1.05rem 1.15rem;
+    background: linear-gradient(100deg, var(--rni-card), transparent);
+    margin-bottom: 1.35rem;
+}
+.rni-eyebrow {
+    font-size: .71rem;
+    font-weight: 750;
+    color: var(--rni-accent);
+    text-transform: uppercase;
+    letter-spacing: .13em;
+}
+.rni-identity-title {
+    margin: .28rem 0 .3rem;
+    font-size: 1.17rem;
+    font-weight: 760;
+    color: #F8FAFF;
+}
+.rni-identity-subtitle { font-size: .88rem; color: var(--rni-soft); }
+.rni-sidebar-brand { padding: .55rem 0 1rem; }
+.rni-sidebar-logo { font-size: 1.65rem; font-weight: 830; color: #F8FBFF; letter-spacing: -.03em; }
+.rni-sidebar-logo span { color: var(--rni-accent); }
+.rni-sidebar-tagline { font-size: .8rem; color: #A3B9D3; }
+.rni-inline-loading {
+    background: var(--rni-card) !important;
+    border-color: var(--rni-edge) !important;
+}
+.rni-inline-loading .text { color: #D9E8FB !important; }
+.rni-inline-loading .spinner { border-color: #314C6A !important; border-top-color: var(--rni-accent) !important; }
+@media (max-width: 900px) {
+    div[data-baseweb="tab-list"] button[role="tab"] { flex-basis: 100% !important; max-width: 100% !important; }
+    [data-testid="stMainBlockContainer"] { padding: 1.2rem .9rem 2rem; }
+}
+/* Login page: streamlit-authenticator keeps full control of fields and submission. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stForm"] {
+    max-width: 490px;
+    margin: 1rem auto;
+    padding: 1.7rem;
+    border: 1px solid #264263;
+    border-radius: 18px;
+    background: #101F34;
+}
