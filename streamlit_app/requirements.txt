@@ -4,3 +4,5 @@ PyYAML
 streamlit-authenticator
 bcrypt
 openpyxl
+mlxtend
+plotly
