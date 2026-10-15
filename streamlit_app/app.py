@@ -3220,7 +3220,14 @@ if user_role == TECHNICAL_ROLE:
                     return ["background-color: #fef6e0"] * len(row)
                 return [""] * len(row)
 
+            
             preview_df = raw_df.head(20).copy()
+
+            if "StockCode" in preview_df.columns:
+                preview_df["StockCode"] = (
+                    preview_df["StockCode"].astype("string")
+                )
+
             try:
                 styled_preview = preview_df.style.apply(
                     _highlight_preview_rows, axis=1
@@ -3647,9 +3654,19 @@ if user_role == TECHNICAL_ROLE:
                     post_checks, width="stretch", hide_index=True
                 )
 
+                
                 st.subheader("Cleaned Transaction Preview")
+
+                cleaned_preview = cleaned_df.head(20).copy()
+
+                if "StockCode" in cleaned_preview.columns:
+                    cleaned_preview["StockCode"] = (
+                        cleaned_preview["StockCode"].astype("string")
+                    )
+
                 st.dataframe(
-                    cleaned_df.head(20), width="stretch"
+                    cleaned_preview,
+                    width="stretch",
                 )
 
                 render_proceed_button(
