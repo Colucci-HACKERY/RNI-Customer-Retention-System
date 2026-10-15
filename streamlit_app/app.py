@@ -1745,10 +1745,10 @@ def build_data_validation_report(
 
 def compute_market_basket(
     cleaned_df: Optional[pd.DataFrame],
-    min_support: float = 0.002,
+    min_support: float = 0.005,
     min_confidence: float = 0.15,
     min_lift: float = 1.0,
-    top_n_products: int = 150,
+    top_n_products: int = 50,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Calculate association rules at invoice level with diagnostics.
 
@@ -1826,10 +1826,12 @@ def compute_market_basket(
         )
 
         frequent_itemsets = apriori(
-            basket,
-            min_support=float(min_support),
-            use_colnames=True,
-        )
+    basket,
+    min_support=float(min_support),
+    use_colnames=True,
+    max_len=2,
+    low_memory=True,
+)
         diagnostics["frequent_itemsets"] = len(frequent_itemsets)
 
         if frequent_itemsets.empty:
