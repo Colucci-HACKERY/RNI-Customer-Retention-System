@@ -1743,6 +1743,7 @@ def build_data_validation_report(
     return pd.concat([validation, cleaning_report], ignore_index=True)
 
 
+
 def compute_market_basket(
     cleaned_df: Optional[pd.DataFrame],
     min_support: float = 0.005,
@@ -1750,18 +1751,8 @@ def compute_market_basket(
     min_lift: float = 1.0,
     top_n_products: int = 50,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Calculate association rules at invoice level with diagnostics.
+    """Calculate product-pair association rules with reduced memory use."""
 
-    Args:
-        cleaned_df: The cleaned transaction dataframe.
-        min_support: Minimum itemset support.
-        min_confidence: Minimum rule confidence.
-        min_lift: Minimum rule lift.
-        top_n_products: Number of top products to include.
-
-    Returns:
-        A tuple of (rules dataframe, diagnostics dictionary).
-    """
     diagnostics: dict[str, Any] = {
         "status": "Not run",
         "input_rows": 0,
@@ -1777,62 +1768,129 @@ def compute_market_basket(
         diagnostics["status"] = "mlxtend is not installed"
         return pd.DataFrame(), diagnostics
 
-    sales = completed_sales_view(cleaned_df)
-    diagnostics["input_rows"] = 0 if cleaned_df is None else len(cleaned_df)
+    if cleaned_df is None or cleaned_df.empty:
+        diagnostics["status"] = "No transaction data available"
+        return pd.DataFrame(), diagnostics
+
+    diagnostics["input_rows"] = len(cleaned_df)
+
+    required = {"Invoice", "Description", "Quantity"}
+    if not required.issubset(cleaned_df.columns):
+        diagnostics["status"] = "Required product fields are missing"
+        return pd.DataFrame(), diagnostics
+
+    # Select only the columns required for MBA and sales filtering.
+    columns = [
+        column
+        for column in (
+            "Invoice",
+            "Description",
+            "Quantity",
+            "StockCode",
+            "IsCompletedSale",
+            "IsCancellation",
+            "Price",
+        )
+        if column in cleaned_df.columns
+    ]
+
+    sales = completed_sales_view(cleaned_df[columns])
 
     if sales.empty:
         diagnostics["status"] = "No completed sales available"
         return pd.DataFrame(), diagnostics
 
-    required = {"Invoice", "Description", "Quantity"}
-    if not required.issubset(sales.columns):
-        diagnostics["status"] = "Required product fields are missing"
-        return pd.DataFrame(), diagnostics
+    sales = sales.dropna(
+        subset=["Invoice", "Description"]
+    ).copy()
 
-    sales = sales.dropna(subset=["Invoice", "Description"]).copy()
-    sales["Description"] = sales["Description"].astype(str).str.strip()
+    sales["Description"] = (
+        sales["Description"].astype("string").str.strip()
+    )
 
+    sales = sales.loc[
+        sales["Description"].notna()
+        & sales["Description"].ne("")
+    ]
+
+    # Exclude administrative and non-product stock codes.
     if "StockCode" in sales.columns:
-        stock = sales["StockCode"].astype(str).str.upper().str.strip()
+        stock = (
+            sales["StockCode"]
+            .astype("string")
+            .str.upper()
+            .str.strip()
+        )
+
         admin_mask = stock.str.match(
             r"^(POST|DOT|M|D|BANK CHARGES|AMAZONFEE|S|CRUK)$",
             na=False,
         )
-        sales = sales.loc[~admin_mask].copy()
+
+        sales = sales.loc[~admin_mask]
 
     diagnostics["eligible_rows"] = len(sales)
-    diagnostics["eligible_invoices"] = int(sales["Invoice"].nunique())
+    diagnostics["eligible_invoices"] = int(
+        sales["Invoice"].nunique()
+    )
 
     if diagnostics["eligible_invoices"] < 2:
-        diagnostics["status"] = "Too few invoices for association analysis"
+        diagnostics["status"] = (
+            "Too few invoices for association analysis"
+        )
         return pd.DataFrame(), diagnostics
 
-    top_products = (
-        sales.groupby("Description")["Quantity"]
-        .sum()
-        .sort_values(ascending=False)
-        .head(int(top_n_products))
-        .index
-    )
-    sales = sales.loc[sales["Description"].isin(top_products)].copy()
-    diagnostics["products_analysed"] = int(sales["Description"].nunique())
-
     try:
-        basket = (
-            sales.groupby(["Invoice", "Description"])["Quantity"]
+        # Identify the highest-volume products.
+        top_products = (
+            sales.groupby("Description")["Quantity"]
             .sum()
-            .unstack(fill_value=0)
-            .gt(0)
+            .nlargest(int(top_n_products))
+            .index
         )
 
+        sales = sales.loc[
+            sales["Description"].isin(top_products),
+            ["Invoice", "Description", "Quantity"]
+        ]
+
+        diagnostics["products_analysed"] = int(
+            sales["Description"].nunique()
+        )
+
+        if sales.empty:
+            diagnostics["status"] = "No eligible products found"
+            return pd.DataFrame(), diagnostics
+
+        # Remove repeat invoice-product combinations.
+        # Completed-sale quantities are already positive.
+        transactions = sales[
+            ["Invoice", "Description"]
+        ].drop_duplicates()
+
+        # Build Boolean invoice-by-product matrix.
+        basket = pd.crosstab(
+            transactions["Invoice"],
+            transactions["Description"]
+        ).gt(0)
+
+        del transactions
+        del sales
+
+        # Restrict Apriori to individual items and pairs.
         frequent_itemsets = apriori(
-    basket,
-    min_support=float(min_support),
-    use_colnames=True,
-    max_len=2,
-    low_memory=True,
-)
-        diagnostics["frequent_itemsets"] = len(frequent_itemsets)
+            basket,
+            min_support=float(min_support),
+            use_colnames=True,
+            max_len=2,
+            low_memory=True,
+        )
+
+        diagnostics["frequent_itemsets"] = len(
+            frequent_itemsets
+        )
+
+        del basket
 
         if frequent_itemsets.empty:
             diagnostics["status"] = (
@@ -1845,9 +1903,13 @@ def compute_market_basket(
             metric="confidence",
             min_threshold=float(min_confidence),
         )
+
         diagnostics["rules_before_lift"] = len(rules)
 
-        rules = rules.loc[rules["lift"] >= float(min_lift)].copy()
+        rules = rules.loc[
+            rules["lift"] >= float(min_lift)
+        ].copy()
+
         diagnostics["rules_after_lift"] = len(rules)
 
         if rules.empty:
@@ -1859,6 +1921,7 @@ def compute_market_basket(
         rules["Antecedents"] = rules["antecedents"].apply(
             lambda items: ", ".join(sorted(map(str, items)))
         )
+
         rules["Consequents"] = rules["consequents"].apply(
             lambda items: ", ".join(sorted(map(str, items)))
         )
@@ -1874,17 +1937,20 @@ def compute_market_basket(
                 ]
             ]
             .sort_values(
-                ["lift", "confidence", "support"], ascending=False
+                ["lift", "confidence", "support"],
+                ascending=False,
             )
             .reset_index(drop=True)
         )
+
         diagnostics["status"] = "Success"
         return output, diagnostics
 
-    except (ValueError, KeyError, TypeError) as exc:
-        diagnostics["status"] = f"Analysis error: {exc}"
+    except (ValueError, KeyError, TypeError, MemoryError) as exc:
+        diagnostics["status"] = (
+            f"Analysis error: {type(exc).__name__}: {exc}"
+        )
         return pd.DataFrame(), diagnostics
-
 
 # ------------------------------------------------------------
 # 12a. Data ingestion helpers
@@ -5710,35 +5776,39 @@ else:
                     mba_col1, mba_col2, mba_col3, mba_col4 = (
                         st.columns(4)
                     )
-                    mba_support = mba_col1.number_input(
-                        "Minimum support",
-                        min_value=0.0005,
-                        max_value=0.05,
-                        value=0.002,
-                        step=0.0005,
-                        format="%.4f",
-                    )
-                    mba_confidence = mba_col2.slider(
-                        "Minimum confidence",
-                        min_value=0.05,
-                        max_value=0.90,
-                        value=0.15,
-                        step=0.05,
-                    )
-                    mba_lift = mba_col3.slider(
-                        "Minimum lift",
-                        min_value=1.0,
-                        max_value=5.0,
-                        value=1.0,
-                        step=0.1,
-                    )
-                    mba_products = mba_col4.slider(
-                        "Products analysed",
-                        min_value=50,
-                        max_value=300,
-                        value=150,
-                        step=25,
-                    )
+                    
+mba_support = mba_col1.number_input(
+    "Minimum support",
+    min_value=0.005,
+    max_value=0.05,
+    value=0.005,
+    step=0.001,
+    format="%.4f",
+)
+
+mba_confidence = mba_col2.slider(
+    "Minimum confidence",
+    min_value=0.05,
+    max_value=0.90,
+    value=0.15,
+    step=0.05,
+)
+
+mba_lift = mba_col3.slider(
+    "Minimum lift",
+    min_value=1.0,
+    max_value=5.0,
+    value=1.0,
+    step=0.1,
+)
+
+mba_products = mba_col4.slider(
+    "Products analysed",
+    min_value=20,
+    max_value=50,
+    value=50,
+    step=10,
+)
 
                     if st.button(
                         "Run Market Basket Analysis", type="primary"
