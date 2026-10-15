@@ -5777,41 +5777,43 @@ else:
                         st.columns(4)
                     )
                     
-mba_support = mba_col1.number_input(
-    "Minimum support",
-    min_value=0.005,
-    max_value=0.05,
-    value=0.005,
-    step=0.001,
-    format="%.4f",
-)
+                    
+                    mba_support = mba_col1.number_input(
+                        "Minimum support",
+                        min_value=0.005,
+                        max_value=0.05,
+                        value=0.005,
+                        step=0.001,
+                        format="%.4f",
+                    )
 
-mba_confidence = mba_col2.slider(
-    "Minimum confidence",
-    min_value=0.05,
-    max_value=0.90,
-    value=0.15,
-    step=0.05,
-)
+                    mba_confidence = mba_col2.slider(
+                        "Minimum confidence",
+                        min_value=0.05,
+                        max_value=0.90,
+                        value=0.15,
+                        step=0.05,
+                    )
 
-mba_lift = mba_col3.slider(
-    "Minimum lift",
-    min_value=1.0,
-    max_value=5.0,
-    value=1.0,
-    step=0.1,
-)
+                    mba_lift = mba_col3.slider(
+                        "Minimum lift",
+                        min_value=1.0,
+                        max_value=5.0,
+                        value=1.0,
+                        step=0.1,
+                    )
 
-mba_products = mba_col4.slider(
-    "Products analysed",
-    min_value=20,
-    max_value=50,
-    value=50,
-    step=10,
-)
+                    mba_products = mba_col4.slider(
+                        "Products analysed",
+                        min_value=20,
+                        max_value=50,
+                        value=50,
+                        step=10,
+                    )
 
                     if st.button(
-                        "Run Market Basket Analysis", type="primary"
+                        "Run Market Basket Analysis",
+                        type="primary",
                     ):
                         with loading_overlay(
                             "Finding frequently co-purchased "
@@ -5824,6 +5826,7 @@ mba_products = mba_col4.slider(
                                 min_lift=mba_lift,
                                 top_n_products=mba_products,
                             )
+
                         st.session_state.mba_rules = rules
                         st.session_state.mba_diagnostics = diagnostics
 
