@@ -1376,9 +1376,15 @@ def calculate_data_quality_score(
 
 @st.cache_data(show_spinner=False)
 def read_csv_cached(path_text: str, modified_time: int) -> pd.DataFrame:
-    """Cache a CSV read keyed by path and modification time."""
-    del modified_time  # used only for cache invalidation
-    return pd.read_csv(path_text)
+    """Read published CSV files with consistent StockCode typing."""
+    del modified_time
+
+    df = pd.read_csv(path_text)
+
+    if "StockCode" in df.columns:
+        df["StockCode"] = df["StockCode"].astype("string")
+
+    return df
 
 
 def safe_read_published_csv(path: Path) -> Optional[pd.DataFrame]:
