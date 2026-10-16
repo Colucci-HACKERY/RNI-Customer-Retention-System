@@ -1,20 +1,3 @@
-# ============================================================
-# RNI CUSTOMER RETENTION SYSTEM — STREAMLIT CONFIGURATION
-# ------------------------------------------------------------
-# This file pins Streamlit to the Light theme that
-# RNI_styles.css is designed against. Without it, Streamlit
-# would honour the operating system's `prefers-color-scheme`
-# setting and could render its dark chrome behind the light
-# tokens in the stylesheet, producing unreadable labels and
-# buttons on the login screen and in the workspaces.
-#
-# primaryColor matches the Technical workspace accent so that
-# native Streamlit widgets (checkboxes, sliders, focus rings)
-# look intentional before any workspace marker is injected.
-# After login, the CSS overrides redirect those widgets at the
-# active workspace accent (navy-blue for Technical, teal for
-# Business), so the two remain visually consistent either way.
-# ============================================================
 
 [theme]
 base = "light"
@@ -24,22 +7,9 @@ secondaryBackgroundColor = "#ffffff"
 textColor = "#14243c"
 font = "sans serif"
 
-
-# ------------------------------------------------------------
-# Server settings
-# ------------------------------------------------------------
-# headless keeps the process from trying to open a browser
-# window on the host, which is what we want both locally and on
-# Streamlit Community Cloud.
 [server]
 headless = true
 
-
-# ------------------------------------------------------------
-# Browser settings
-# ------------------------------------------------------------
-# gatherUsageStats is opt-out telemetry. Leaving it enabled is
-# harmless, but for a controlled analytics deployment the
-# explicit false makes the behaviour auditable.
 [browser]
 gatherUsageStats = false
+
