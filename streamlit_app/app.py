@@ -101,10 +101,12 @@ st.set_page_config(
     layout="wide",
 )
 
-# The application deliberately does not force a theme. The
-# external stylesheet responds to Streamlit's Light / Dark /
-# System setting so that the interface remains readable
-# whichever theme the user has selected.
+# The application is pinned to the Light theme via
+# .streamlit/config.toml, and the external stylesheet assumes
+# that single palette. It deliberately avoids the
+# `prefers-color-scheme` media query, which fires based on the
+# operating system setting rather than Streamlit's own theme
+# toggle, and which caused mismatched chrome and tokens.
 _STYLESHEET_PATH = Path(__file__).parent / "RNI_styles.css"
 if _STYLESHEET_PATH.is_file():
     st.markdown(
@@ -804,6 +806,15 @@ if _authentication_status is False:
     st.stop()
 
 if _authentication_status is None:
+    # The login screen is the only state where neither workspace
+    # marker exists. We inject an explicit login marker so the
+    # stylesheet can decorate the signed-out screen without
+    # affecting the authenticated workspaces. The marker is a
+    # presentation aid only and carries no security meaning.
+    st.markdown(
+        '<span id="rni-login-marker" style="display:none"></span>',
+        unsafe_allow_html=True,
+    )
     st.info("Please log in to continue.")
     st.stop()
 
@@ -1009,14 +1020,14 @@ def loading_overlay(
                     height: 44px;
                     margin: 0 auto 0.9rem auto;
                     border: 4px solid #e8ecf1;
-                    border-top-color: #1a5276;
+                    border-top-color: #0d3b66;
                     border-radius: 50%;
                     animation: rni_spin 1s linear infinite;">
                 </div>
-                <div style="font-size:1.15rem;font-weight:700;color:#1a2a4a;">
+                <div style="font-size:1.15rem;font-weight:700;color:#14243c;">
                     Loading, please wait...
                 </div>
-                <div style="font-size:0.92rem;color:#555;margin-top:0.35rem;">
+                <div style="font-size:0.92rem;color:#5a6b84;margin-top:0.35rem;">
                     {message}
                 </div>
             </div>
@@ -1302,7 +1313,8 @@ def load_raw_data_with_cache(
     write_raw_cache(file_hash, parsed_df, filename)
 
     return parsed_df, False
-    # ------------------------------------------------------------
+
+# ------------------------------------------------------------
 # 11. Country standardisation and geographic validation
 # ------------------------------------------------------------
 
@@ -3145,6 +3157,7 @@ def publish_pipeline_outputs(
     }
 
     return reporting_df, publication_summary
+
     # ============================================================
 # 14. Technical workspace
 # ============================================================
@@ -5440,14 +5453,14 @@ else:
                     height: 44px;
                     margin: 0 auto 0.9rem auto;
                     border: 4px solid #e8ecf1;
-                    border-top-color: #1a5276;
+                    border-top-color: #0d3b66;
                     border-radius: 50%;
                     animation: rni_spin 1s linear infinite;">
                 </div>
-                <div style="font-size:1.15rem;font-weight:700;color:#1a2a4a;">
+                <div style="font-size:1.15rem;font-weight:700;color:#14243c;">
                     Loading business workspace
                 </div>
-                <div style="font-size:0.92rem;color:#555;margin-top:0.35rem;">
+                <div style="font-size:0.92rem;color:#5a6b84;margin-top:0.35rem;">
                     Resolving the latest approved publication...
                 </div>
             </div>
