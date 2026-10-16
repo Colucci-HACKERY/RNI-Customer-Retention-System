@@ -1,152 +1,129 @@
 
 /* ==========================================================
    RNI CUSTOMER RETENTION SYSTEM
-   DUAL-THEME STYLESHEET
-   Technical Workspace: Navy / Blue
-   Business Workspace: Teal
-   Compatible with Streamlit native Light and Dark themes
+   MODERN ENTERPRISE UX — 2026
+
+   Technical: Navy / Blue
+   Business: Teal
+   Light + Dark: Streamlit-native theme surfaces
+
+   IMPORTANT:
+   Replace the old stylesheet entirely.
+   Do not append this beneath previous theme overrides.
    ========================================================== */
 
-/* DESIGN CONSTANTS */
+/* 01 — DESIGN SYSTEM */
 
 :root {
-    --rni-radius-sm: 8px;
-    --rni-radius-md: 12px;
-    --rni-radius-lg: 16px;
+    --rni-radius-sm: 9px;
+    --rni-radius-md: 13px;
+    --rni-radius-lg: 18px;
+    --rni-radius-xl: 22px;
 
-    --rni-font: "Inter", "Segoe UI", system-ui,
-        -apple-system, sans-serif;
+    --rni-navy: #124674;
+    --rni-teal: #087e73;
 
-    --rni-speed: 180ms ease;
+    --rni-font: "Inter", "Segoe UI",
+        system-ui, -apple-system, sans-serif;
 
-    --rni-tech: #0d3b66;
-    --rni-tech-hover: #092d50;
-
-    --rni-business: #007e74;
-    --rni-business-hover: #00675f;
+    --rni-ease: 180ms ease;
 }
 
-/* ==========================================================
-   THEME SYSTEM
-
-   Streamlit provides:
-   --background-color
-   --secondary-background-color
-   --text-color
-   --primary-color
-
-   These change when users select Light or Dark.
-
-   Avoid assigning fixed colours to native widgets.
-   ========================================================== */
+/* Use native Streamlit theme variables.
+   Do not overwrite the app background with fixed colours. */
 
 .stApp {
-    --rni-bg: var(--background-color, #ffffff);
-
+    --rni-text: var(--text-color, inherit);
+    --rni-bg: var(--background-color, transparent);
     --rni-surface: var(
         --secondary-background-color,
-        #f2f5fa
-    );
-
-    --rni-text: var(--text-color, #14243c);
-
-    --rni-muted: color-mix(
-        in srgb,
-        var(--rni-text) 72%,
-        var(--rni-bg)
+        transparent
     );
 
     --rni-border: color-mix(
         in srgb,
-        var(--rni-text) 19%,
+        currentColor 15%,
         transparent
     );
 
-    --rni-soft: color-mix(
+    --rni-muted: color-mix(
         in srgb,
-        var(--rni-text) 5%,
-        var(--rni-bg)
+        currentColor 68%,
+        transparent
     );
 
-    --rni-accent: var(--rni-tech);
+    --rni-accent: var(--rni-navy);
 
     --rni-accent-soft: color-mix(
         in srgb,
-        var(--rni-accent) 16%,
-        var(--rni-bg)
+        var(--rni-accent) 12%,
+        transparent
     );
 
-    background: var(--rni-bg);
-    color: var(--rni-text);
+    --rni-shadow:
+        0 2px 6px rgba(0, 0, 0, 0.03),
+        0 8px 24px rgba(0, 0, 0, 0.045);
+
     font-family: var(--rni-font);
 }
 
-/* BUSINESS ROLE */
+/* Business uses teal instead of navy */
 
 .stApp:has(#rni-business-marker) {
-    --rni-accent: var(--rni-business);
+    --rni-accent: var(--rni-teal);
 }
 
-/* DARK THEME ACCENTS
-
-   These selectors support common Streamlit theme
-   attributes. Native theme variables remain authoritative
-   regardless of which selector Streamlit uses.
-*/
-
-:root[data-theme="dark"] .stApp,
-[data-theme="dark"] .stApp,
-.stApp[data-theme="dark"] {
-    --rni-tech: #65a5e3;
-    --rni-tech-hover: #86b9eb;
-
-    --rni-business: #48c8b8;
-    --rni-business-hover: #65dccd;
-}
-
-/* ==========================================================
-   MAIN PAGE
-   ========================================================== */
+/* 02 — APPLICATION LAYOUT */
 
 .stApp [data-testid="stMainBlockContainer"] {
-    max-width: 1530px;
-    padding-top: 1.75rem;
-    padding-bottom: 3rem;
+    max-width: 1500px;
+    padding-top: 2rem;
+    padding-bottom: 4rem;
 }
 
-.stApp h1,
-.stApp h2,
-.stApp h3,
-.stApp h4 {
-    color: var(--rni-text) !important;
-    line-height: 1.3;
+.stApp [data-testid="stVerticalBlock"] {
+    row-gap: 0.7rem;
 }
+
+/* Give the main content more breathing space */
+
+.stApp .block-container {
+    padding-left: clamp(1rem, 2.5vw, 3rem);
+    padding-right: clamp(1rem, 2.5vw, 3rem);
+}
+
+/* 03 — TYPOGRAPHY */
 
 .stApp h1 {
-    font-size: clamp(1.7rem, 2.2vw, 2.4rem);
-    letter-spacing: -0.025em;
+    font-size: clamp(1.8rem, 2.3vw, 2.55rem);
+    font-weight: 760;
+    line-height: 1.2;
+    letter-spacing: -0.035em;
 }
 
 .stApp h2 {
-    font-size: 1.5rem;
+    font-size: clamp(1.35rem, 1.6vw, 1.7rem);
+    font-weight: 720;
+    letter-spacing: -0.02em;
 }
 
 .stApp h3 {
-    font-size: 1.16rem;
+    font-size: 1.12rem;
+    font-weight: 680;
+    letter-spacing: -0.01em;
 }
 
 .stApp [data-testid="stMarkdownContainer"] p,
 .stApp [data-testid="stMarkdownContainer"] li {
-    line-height: 1.6;
+    line-height: 1.65;
 }
 
 .stApp [data-testid="stCaptionContainer"] {
-    color: var(--rni-muted) !important;
+    opacity: 0.82;
+    font-size: 0.86rem;
 }
 
-/* ==========================================================
-   SIDEBAR
-   ========================================================== */
+/* 04 — SIDEBAR */
 
 .stApp section[data-testid="stSidebar"] {
     border-right: 1px solid var(--rni-border);
@@ -154,18 +131,20 @@
 
 .stApp section[data-testid="stSidebar"]
 [data-testid="stSidebarUserContent"] {
-    padding-top: 1.4rem;
+    padding: 1.4rem 0.9rem 2rem;
 }
 
 .rni-sidebar-brand {
-    padding: 0.6rem 0 1rem;
+    padding: 0.65rem 0.45rem 1.5rem;
+    margin-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rni-border);
 }
 
 .rni-sidebar-logo {
-    color: var(--rni-text);
-    font-weight: 800;
-    font-size: 1.65rem;
-    letter-spacing: -0.03em;
+    font-size: 1.75rem;
+    font-weight: 820;
+    letter-spacing: -0.05em;
+    line-height: 1.2;
 }
 
 .rni-sidebar-logo span {
@@ -173,146 +152,178 @@
 }
 
 .rni-sidebar-tagline {
-    color: var(--rni-muted);
-    font-size: 0.82rem;
+    opacity: 0.72;
+    font-size: 0.78rem;
+    margin-top: 0.4rem;
+    line-height: 1.5;
 }
 
-/* RADIO NAVIGATION */
+/* 05 — SIDEBAR NAVIGATION */
+
+.stApp section[data-testid="stSidebar"]
+[role="radiogroup"] {
+    gap: 0.22rem;
+}
 
 .stApp section[data-testid="stSidebar"]
 [role="radiogroup"] label {
-    border-radius: 10px;
-    padding: 0.52rem 0.65rem;
-    min-height: 42px;
-    margin-bottom: 0.15rem;
-    transition: background var(--rni-speed);
+    min-height: 45px;
+    border-radius: var(--rni-radius-sm);
+    padding: 0.65rem 0.75rem;
+    border: 1px solid transparent;
+
+    transition:
+        background var(--rni-ease),
+        transform var(--rni-ease),
+        border-color var(--rni-ease);
 }
 
 .stApp section[data-testid="stSidebar"]
 [role="radiogroup"] label:hover {
-    background: var(--rni-soft);
+    background: var(--rni-accent-soft);
+    transform: translateX(2px);
 }
 
 .stApp section[data-testid="stSidebar"]
 [role="radiogroup"] label:has(input:checked) {
     background: var(--rni-accent-soft);
-    box-shadow: inset 4px 0 0 var(--rni-accent);
+    border-color: color-mix(
+        in srgb,
+        var(--rni-accent) 24%,
+        transparent
+    );
+    box-shadow: inset 3px 0 0 var(--rni-accent);
 }
 
-.stApp section[data-testid="stSidebar"]
-[role="radiogroup"] label p {
-    color: var(--rni-text) !important;
-    opacity: 1 !important;
-}
+/* Navigation text inherits the correct native theme colour */
 
 .stApp section[data-testid="stSidebar"]
 [role="radiogroup"] label:has(input:checked) p {
-    color: var(--rni-text) !important;
     font-weight: 750;
 }
 
-/* ==========================================================
-   NATIVE INPUTS
+/* 06 — METRIC / KPI CARDS */
 
-   Leave input backgrounds, text colours, dropdown panels
-   and uploader internals to Streamlit.
+.stApp div[data-testid="stMetric"] {
+    border: 1px solid var(--rni-border);
+    border-radius: var(--rni-radius-lg);
 
-   This prevents dark-on-dark and light-on-light controls.
-   ========================================================== */
+    border-top: 3px solid var(--rni-accent);
+    padding: 1.15rem 1.3rem;
 
-.stApp [data-testid="stWidgetLabel"] p {
-    font-weight: 600;
+    min-width: 0;
+    height: 100%;
+
+    background: var(--rni-accent-soft);
+    box-shadow: var(--rni-shadow);
+
+    transition:
+        transform var(--rni-ease),
+        box-shadow var(--rni-ease);
 }
 
-.stApp div[data-baseweb="input"],
-.stApp div[data-baseweb="select"],
-.stApp div[data-baseweb="textarea"] {
-    border-radius: 10px;
+.stApp div[data-testid="stMetric"]:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 5px 12px rgba(0, 0, 0, 0.05),
+        0 14px 30px rgba(0, 0, 0, 0.065);
 }
 
-/* Focus indication without changing widget fill colours */
-
-.stApp input:focus-visible,
-.stApp textarea:focus-visible {
-    outline: 2px solid var(--rni-accent);
-    outline-offset: 1px;
+.stApp div[data-testid="stMetricLabel"] p {
+    font-size: 0.86rem;
+    font-weight: 630;
+    opacity: 0.85;
 }
 
-/* ==========================================================
-   BUTTONS
+.stApp div[data-testid="stMetricValue"] {
+    font-size: clamp(1.45rem, 2vw, 2.25rem);
+    font-weight: 780;
+    letter-spacing: -0.045em;
+    overflow-wrap: anywhere;
+}
 
-   Style primary actions; leave secondary controls
-   native so they adapt to the active theme.
-   ========================================================== */
+.stApp div[data-testid="stMetricDelta"] {
+    font-weight: 650;
+}
+
+/* 07 — BUTTONS */
 
 .stApp .stButton button,
 .stApp .stDownloadButton button,
 .stApp .stLinkButton a {
-    border-radius: 10px;
-    min-height: 2.65rem;
-    font-weight: 600;
+    border-radius: 11px;
+    min-height: 2.75rem;
+    font-weight: 650;
+    padding: 0.55rem 1.1rem;
+
     transition:
-        border-color var(--rni-speed),
-        background-color var(--rni-speed);
+        transform var(--rni-ease),
+        box-shadow var(--rni-ease),
+        border-color var(--rni-ease);
 }
+
+.stApp .stButton button:hover,
+.stApp .stDownloadButton button:hover,
+.stApp .stLinkButton a:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 5px 14px rgba(0, 0, 0, 0.09);
+}
+
+/* Primary action buttons.
+   Native text/background colours are left intact. */
 
 .stApp .stButton button[kind="primary"],
 .stApp .stDownloadButton button[kind="primary"] {
-    border: 1px solid var(--rni-accent);
-    background-color: var(--rni-accent-soft);
-    color: var(--rni-text);
-}
-
-.stApp .stButton button[kind="primary"]:hover,
-.stApp .stDownloadButton button[kind="primary"]:hover {
     border-color: var(--rni-accent);
-    filter: brightness(1.05);
+    box-shadow: 0 3px 12px color-mix(
+        in srgb,
+        var(--rni-accent) 15%,
+        transparent
+    );
 }
 
-/* ==========================================================
-   KPI METRICS
-   ========================================================== */
+/* 08 — FORM FIELDS */
 
-.stApp div[data-testid="stMetric"] {
-    border: 1px solid var(--rni-border);
-    border-top: 3px solid var(--rni-accent);
-    border-radius: var(--rni-radius-md);
-
-    padding: 1rem 1.1rem;
-    min-width: 0;
-    height: 100%;
-
-    background: var(--rni-surface);
+.stApp div[data-baseweb="input"],
+.stApp div[data-baseweb="select"],
+.stApp div[data-baseweb="textarea"] {
+    border-radius: var(--rni-radius-sm);
 }
 
-.stApp div[data-testid="stMetricLabel"] p {
-    color: var(--rni-muted) !important;
-    font-size: 0.9rem;
-    font-weight: 600;
+.stApp [data-testid="stWidgetLabel"] p {
+    font-weight: 640;
+    font-size: 0.91rem;
 }
 
-.stApp div[data-testid="stMetricValue"] {
-    color: var(--rni-text);
-    font-weight: 750;
-    overflow-wrap: anywhere;
-}
+/* Native text, fill and dropdown options are deliberately
+   not overridden. This protects dark-mode visibility. */
 
-/* ==========================================================
-   TABS
-   ========================================================== */
+/* 09 — TABS */
 
 .stApp div[data-baseweb="tab-list"] {
     flex-wrap: wrap !important;
-    gap: 0.45rem !important;
+    gap: 0.5rem !important;
+    border-bottom: 1px solid var(--rni-border);
+    padding-bottom: 0.35rem;
 }
 
 .stApp div[data-baseweb="tab-list"]
 button[role="tab"] {
     flex: 1 1 calc(33.333% - 0.5rem);
-    min-width: 180px;
-    border-radius: 9px 9px 0 0;
+    min-width: 170px;
+    min-height: 45px;
+    padding: 0.7rem 0.95rem;
+
+    border-radius: 11px 11px 0 0;
+    font-weight: 640;
     white-space: normal;
-    font-weight: 600;
+
+    transition: background var(--rni-ease);
+}
+
+.stApp div[data-baseweb="tab-list"]
+button[role="tab"]:hover {
+    background: var(--rni-accent-soft);
 }
 
 .stApp div[data-baseweb="tab-list"]
@@ -322,128 +333,174 @@ button[aria-selected="true"] {
     font-weight: 750;
 }
 
-/* ==========================================================
-   TABLES / DATAFRAMES / ALERTS / FILE UPLOADER
-   ========================================================== */
+/* 10 — DATA TABLES */
 
 .stApp [data-testid="stDataFrame"],
 .stApp [data-testid="stTable"] {
     border: 1px solid var(--rni-border);
     border-radius: var(--rni-radius-md);
+    overflow: hidden;
 }
 
-.stApp [data-testid="stAlert"],
+/* Keep the data grid's native text/background contrast */
+
+/* 11 — EXPANDERS */
+
 .stApp [data-testid="stExpander"] {
-    border-radius: var(--rni-radius-md);
-}
-
-.stApp [data-testid="stFileUploader"] section {
-    border-radius: var(--rni-radius-md);
-}
-
-/* Important:
-   No hardcoded colours on data grid internals, uploader buttons,
-   file dropzones, dropdown menus, radio indicators or SVGs.
-*/
-
-/* ==========================================================
-   CUSTOM RNI COMPONENTS
-   ========================================================== */
-
-.pipeline-breadcrumb,
-.rni-identity,
-.rni-inline-loading {
-    background: var(--rni-surface);
-    color: var(--rni-text);
     border: 1px solid var(--rni-border);
     border-radius: var(--rni-radius-md);
-    padding: 0.85rem 1rem;
+    overflow: hidden;
+}
+
+.stApp [data-testid="stExpander"] summary {
+    padding: 0.4rem 0.3rem;
+    font-weight: 650;
+}
+
+/* 12 — FILE UPLOADER */
+
+.stApp [data-testid="stFileUploader"] section {
+    border-radius: var(--rni-radius-lg);
+    border: 1.5px dashed var(--rni-border);
+    transition: border-color var(--rni-ease);
+}
+
+.stApp [data-testid="stFileUploader"] section:hover {
+    border-color: var(--rni-accent);
+}
+
+/* Do NOT style uploader input text, internal buttons
+   or background: Streamlit controls those per theme. */
+
+/* 13 — ALERTS */
+
+.stApp [data-testid="stAlert"] {
+    border-radius: var(--rni-radius-md);
+    border-width: 1px;
+}
+
+/* 14 — PIPELINE BREADCRUMB */
+
+.pipeline-breadcrumb {
+    border: 1px solid var(--rni-border);
+    border-left: 4px solid var(--rni-accent);
+
+    border-radius: var(--rni-radius-md);
+    padding: 0.85rem 1.1rem;
+
+    background: var(--rni-accent-soft);
+    margin-bottom: 1.2rem;
+
     overflow-wrap: anywhere;
 }
 
+.pipeline-breadcrumb strong {
+    font-weight: 750;
+}
+
+/* 15 — IDENTITY / HEADER */
+
 .rni-identity {
+    border: 1px solid var(--rni-border);
+    border-radius: var(--rni-radius-lg);
+    border-left: 4px solid var(--rni-accent);
+
+    padding: 1.25rem 1.4rem;
     margin-bottom: 1.35rem;
-    padding: 1.05rem 1.15rem;
+
+    box-shadow: var(--rni-shadow);
 }
 
 .rni-eyebrow {
     color: var(--rni-accent);
-    font-weight: 750;
-    font-size: 0.73rem;
+    font-size: 0.74rem;
+    font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
+    letter-spacing: 0.13em;
 }
 
 .rni-identity-title {
-    color: var(--rni-text);
-    font-size: 1.2rem;
-    font-weight: 750;
-    margin: 0.3rem 0;
+    font-size: 1.35rem;
+    font-weight: 780;
+    letter-spacing: -0.025em;
+    margin: 0.4rem 0 0.25rem;
 }
 
 .rni-identity-subtitle {
-    color: var(--rni-muted);
     font-size: 0.9rem;
+    opacity: 0.78;
+    line-height: 1.55;
 }
+
+/* 16 — LOADING INDICATOR */
 
 .rni-inline-loading {
     display: flex;
     align-items: center;
     gap: 0.85rem;
+
+    padding: 1rem 1.15rem;
+    border-radius: var(--rni-radius-md);
+    border: 1px solid var(--rni-border);
+
+    background: var(--rni-accent-soft);
     margin-bottom: 1rem;
 }
 
-.rni-inline-loading .text {
-    color: var(--rni-text);
-    font-size: 0.95rem;
-}
-
 .rni-inline-loading .spinner {
-    flex-shrink: 0;
     width: 24px;
     height: 24px;
+    flex-shrink: 0;
+
     border-radius: 50%;
     border: 3px solid var(--rni-border);
     border-top-color: var(--rni-accent);
-    animation: rni-spin 1s linear infinite;
+
+    animation: rni-spin 0.8s linear infinite;
+}
+
+.rni-inline-loading .text {
+    font-size: 0.93rem;
+    font-weight: 570;
 }
 
 @keyframes rni-spin {
     to { transform: rotate(360deg); }
 }
 
-/* ==========================================================
-   LOGIN PAGE
-   Uses the marker injected by app.py.
-   ========================================================== */
+/* 17 — LOGIN SCREEN */
 
 .stApp:has(#rni-login-marker)
 [data-testid="stMainBlockContainer"] {
+    max-width: 560px;
+    margin: 0 auto;
+
+    padding-top: 3.5rem;
+    padding-bottom: 3rem;
+
     display: flex;
     flex-direction: column;
     align-items: center;
-
-    max-width: 560px;
-    margin: 0 auto;
-    padding-top: 3.5rem;
-    padding-bottom: 3rem;
 }
 
-/* Brand header */
+/* RNI wordmark above login */
 
 .stApp:has(#rni-login-marker)
 [data-testid="stMainBlockContainer"]::before {
-    content: "RNI · CUSTOMER RETENTION SYSTEM";
+    content: "RNI  ·  CUSTOMER RETENTION SYSTEM";
 
     display: block;
-    margin-bottom: 1.6rem;
     text-align: center;
 
+    margin-bottom: 2rem;
+    padding: 0.75rem 1.1rem;
+
+    border: 1px solid var(--rni-border);
+    border-radius: 999px;
+
     font-size: 0.73rem;
-    font-weight: 750;
-    text-transform: uppercase;
-    letter-spacing: 0.16em;
-    color: var(--rni-muted);
+    font-weight: 780;
+    letter-spacing: 0.15em;
 }
 
 /* Login card */
@@ -453,16 +510,15 @@ button[aria-selected="true"] {
 > [data-testid="stVerticalBlock"]
 > [data-testid="stVerticalBlock"] {
     width: 100%;
-    max-width: 460px;
-    margin: 0 auto 1rem;
+    max-width: 470px;
 
-    padding: 2rem;
+    margin: 0 auto 1.2rem;
+    padding: 2.25rem;
 
     border: 1px solid var(--rni-border);
-    border-radius: var(--rni-radius-lg);
+    border-radius: var(--rni-radius-xl);
 
-    background: var(--rni-surface);
-    color: var(--rni-text);
+    box-shadow: var(--rni-shadow);
 }
 
 /* Login heading */
@@ -470,46 +526,47 @@ button[aria-selected="true"] {
 .stApp:has(#rni-login-marker) h1,
 .stApp:has(#rni-login-marker) h2,
 .stApp:has(#rni-login-marker) h3 {
-    color: var(--rni-text) !important;
-    font-weight: 750;
-    font-size: 1.65rem !important;
-    padding-bottom: 0.8rem;
-    border-bottom: 2px solid var(--rni-accent);
+    font-size: 1.75rem !important;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+    margin-bottom: 1.2rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 2px solid var(--rni-accent-soft);
 }
 
-/* Login inputs: no forced background or text colours.
-   Streamlit renders these according to the selected theme. */
+/* Login button */
 
 .stApp:has(#rni-login-marker)
 [data-testid="stFormSubmitButton"] button {
     width: 100%;
-    min-height: 2.9rem;
-    border-radius: 10px;
-    font-weight: 700;
+    min-height: 3rem;
+
+    border-radius: 11px;
+    font-weight: 730;
 }
+
+/* Login message */
 
 .stApp:has(#rni-login-marker)
 [data-testid="stAlert"] {
-    max-width: 460px;
+    max-width: 470px;
     margin: 0 auto;
-    border-radius: 12px;
 }
 
-/* ==========================================================
-   ACCESSIBILITY
-   ========================================================== */
+/* Login inputs intentionally use native Streamlit styling */
 
-.stApp :focus-visible {
-    outline-color: var(--rni-accent);
-}
+/* 18 — DIVIDERS AND FOCUS */
 
 .stApp hr {
-    border-color: var(--rni-border);
+    opacity: 0.5;
 }
 
-/* ==========================================================
-   RESPONSIVE
-   ========================================================== */
+.stApp :focus-visible {
+    outline: 2px solid var(--rni-accent);
+    outline-offset: 2px;
+}
+
+/* 19 — RESPONSIVE DESIGN */
 
 @media (max-width: 900px) {
     .stApp [data-testid="stMainBlockContainer"] {
@@ -519,15 +576,24 @@ button[aria-selected="true"] {
     .stApp div[data-baseweb="tab-list"]
     button[role="tab"] {
         min-width: 0 !important;
-        max-width: 100% !important;
         flex-basis: 100% !important;
+        max-width: 100% !important;
     }
 
     .stApp:has(#rni-login-marker)
     [data-testid="stMainBlockContainer"] {
         padding-top: 2rem;
     }
+
+    .stApp:has(#rni-login-marker)
+    [data-testid="stMainBlockContainer"]
+    > [data-testid="stVerticalBlock"]
+    > [data-testid="stVerticalBlock"] {
+        padding: 1.35rem;
+    }
 }
+
+/* 20 — REDUCED MOTION */
 
 @media (prefers-reduced-motion: reduce) {
     .stApp *,
