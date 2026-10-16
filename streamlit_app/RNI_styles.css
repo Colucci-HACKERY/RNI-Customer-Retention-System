@@ -2,10 +2,11 @@
    RNI CUSTOMER RETENTION SYSTEM — PRESENTATION THEME
    ------------------------------------------------------------
    This stylesheet adapts automatically to Streamlit's
-   Light / Dark / System theme setting. 
+   Light / Dark / System theme setting.
    Technical workspace: navy / blue accents
    Business workspace:  navy / teal accents
    ============================================================ */
+
 
 /* ------------------------------------------------------------
    Shared design tokens — applied to both themes
@@ -419,18 +420,142 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
 
 
 /* ------------------------------------------------------------
-   Login form (streamlit-authenticator keeps control of fields)
+   Login screen (streamlit-authenticator)
+   ------------------------------------------------------------
+   streamlit-authenticator does NOT wrap its login widget in
+   [data-testid="stForm"]. It renders raw BaseWeb inputs and a
+   submit button directly inside the main block. That means in
+   dark mode the card stays white while BaseWeb resolves to
+   dark-theme tokens, making labels and button text invisible.
+
+   The login state is uniquely identifiable: neither workspace
+   marker is present until the user signs in. The selectors
+   below therefore only apply to the signed-out screen and
+   become inert as soon as #rni-technical-marker or
+   #rni-business-marker is injected by the app after login.
    ------------------------------------------------------------ */
 
+/* The login card itself — a nested vertical block inside the
+   main block. Constrain width, give it a themed surface. */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
-[data-testid="stForm"] {
+[data-testid="stMainBlockContainer"]
+> [data-testid="stVerticalBlock"]
+> [data-testid="stVerticalBlock"] {
     max-width: 490px;
-    margin: 1rem auto;
-    padding: 1.7rem;
+    margin: 1.5rem auto;
+    padding: 1.75rem 1.9rem;
+    background: var(--rni-surface);
     border: 1px solid var(--rni-border);
     border-radius: 18px;
-    background: var(--rni-surface);
     box-shadow: var(--rni-shadow);
+    color: var(--rni-text);
+}
+
+/* Headings inside the login card follow the theme text colour. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"]
+> [data-testid="stVerticalBlock"]
+> [data-testid="stVerticalBlock"] h1,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"]
+> [data-testid="stVerticalBlock"]
+> [data-testid="stVerticalBlock"] h2,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"]
+> [data-testid="stVerticalBlock"]
+> [data-testid="stVerticalBlock"] h3 {
+    color: var(--rni-text) !important;
+}
+
+/* Widget labels. Streamlit wraps them in stWidgetLabel; forcing
+   the theme text colour keeps them readable on the card in
+   both light and dark modes. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] label,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] [data-testid="stWidgetLabel"] p {
+    color: var(--rni-text) !important;
+    font-weight: 550;
+}
+
+/* BaseWeb text input fields. Without this, dark mode shows
+   black-on-white input boxes on the white card. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="input"],
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="base-input"] {
+    background-color: var(--rni-surface-alt) !important;
+    border: 1px solid var(--rni-border) !important;
+    border-radius: 10px !important;
+}
+
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="input"] input,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="base-input"] input {
+    background-color: transparent !important;
+    color: var(--rni-text) !important;
+    caret-color: var(--rni-accent) !important;
+}
+
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="input"] input::placeholder {
+    color: var(--rni-text-soft) !important;
+}
+
+/* Password reveal eye icon — inherits poorly in dark mode. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="input"] button,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-baseweb="input"] svg {
+    color: var(--rni-text-muted) !important;
+    fill: var(--rni-text-muted) !important;
+}
+
+/* The Login submit button. streamlit-authenticator renders it
+   as a BaseWeb submit button, NOT an st.button, so it never
+   picks up the primary-kind styles above. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] button[kind="secondaryFormSubmit"],
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] button[kind="primaryFormSubmit"],
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button {
+    background-color: var(--rni-accent) !important;
+    color: var(--rni-on-accent) !important;
+    border: 1px solid var(--rni-accent) !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    min-height: 2.65rem;
+    padding: 0.4rem 1.6rem;
+}
+
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] button[kind="secondaryFormSubmit"]:hover,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] button[kind="primaryFormSubmit"]:hover,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-testid="stFormSubmitButton"] button:hover {
+    background-color: var(--rni-accent-hover) !important;
+    border-color: var(--rni-accent-hover) !important;
+    color: var(--rni-on-accent) !important;
+}
+
+/* "Please log in to continue." info alert. Streamlit's default
+   is very low-contrast against the dark theme background, so we
+   recolour it against the accent-soft token. */
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-testid="stAlert"] {
+    background-color: var(--rni-accent-soft) !important;
+    border: 1px solid var(--rni-border) !important;
+    border-radius: var(--rni-radius-md) !important;
+}
+
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-testid="stAlert"] p,
+.stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
+[data-testid="stMainBlockContainer"] div[data-testid="stAlert"] span {
+    color: var(--rni-text) !important;
 }
 
 
