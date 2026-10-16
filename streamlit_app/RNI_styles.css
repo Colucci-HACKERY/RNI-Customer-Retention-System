@@ -534,3 +534,151 @@ div[data-baseweb="base-input"] input {
         padding: 1.3rem;
     }
 }
+
+/* ============================================================
+   RNI — FINAL CONTRAST REPAIR
+   Consistent readable light workspace, including when
+   Streamlit's built-in Dark mode is selected.
+   ============================================================ */
+
+.stApp {
+    --rni-bg: #f5f8fc;
+    --rni-surface: #ffffff;
+    --rni-text: #14243c;
+    --rni-muted: #52647b;
+    --rni-border: #cbd6e3;
+    --rni-soft: #eef3f9;
+    --rni-accent-soft: #dce8f4;
+    background: #f5f8fc !important;
+    color: #14243c !important;
+}
+
+.stApp:has(#rni-business-marker) {
+    --rni-accent-soft: #d5f0ec;
+}
+
+/* Main page and sidebar */
+.stApp [data-testid="stAppViewContainer"],
+.stApp [data-testid="stMain"] {
+    background: #f5f8fc !important;
+}
+
+.stApp section[data-testid="stSidebar"] {
+    background: #ffffff !important;
+    color: #14243c !important;
+}
+
+/* Sidebar navigation: both selected and unselected */
+.stApp section[data-testid="stSidebar"]
+[role="radiogroup"] label {
+    background: transparent;
+}
+
+.stApp section[data-testid="stSidebar"]
+[role="radiogroup"] label p,
+.stApp section[data-testid="stSidebar"]
+[role="radiogroup"] label span {
+    color: #14243c !important;
+    opacity: 1 !important;
+}
+
+.stApp section[data-testid="stSidebar"]
+[role="radiogroup"] label:has(input:checked) {
+    background: var(--rni-accent-soft) !important;
+    box-shadow: inset 4px 0 0 var(--rni-accent);
+}
+
+/* All editable inputs: matching light surface and dark text */
+.stApp div[data-baseweb="input"],
+.stApp div[data-baseweb="base-input"],
+.stApp div[data-baseweb="textarea"],
+.stApp div[data-baseweb="select"] {
+    background-color: #ffffff !important;
+    color: #14243c !important;
+    border-color: #cbd6e3 !important;
+}
+
+.stApp input:not([type="checkbox"]):not([type="radio"]),
+.stApp textarea {
+    background-color: transparent !important;
+    color: #14243c !important;
+    -webkit-text-fill-color: #14243c !important;
+    caret-color: #14243c !important;
+}
+
+.stApp input::placeholder,
+.stApp textarea::placeholder {
+    color: #65758b !important;
+    opacity: 1 !important;
+}
+
+/* File uploader — fixes the black upload area */
+.stApp [data-testid="stFileUploader"] section,
+.stApp [data-testid="stFileUploaderDropzone"] {
+    background: #ffffff !important;
+    color: #14243c !important;
+    border: 1px dashed #aabbd0 !important;
+    border-radius: 12px;
+}
+
+.stApp [data-testid="stFileUploader"] section p,
+.stApp [data-testid="stFileUploader"] section span,
+.stApp [data-testid="stFileUploader"] section small {
+    color: #43546b !important;
+    opacity: 1 !important;
+}
+
+.stApp [data-testid="stFileUploader"] section button {
+    background: #ffffff !important;
+    color: #0d3b66 !important;
+    border: 1px solid #aabbd0 !important;
+}
+
+.stApp [data-testid="stFileUploader"] section button p {
+    color: #0d3b66 !important;
+}
+
+/* Secondary buttons — fixes dark Reset Pipeline button */
+.stApp .stButton button[kind="secondary"],
+.stApp .stDownloadButton button[kind="secondary"] {
+    background: #ffffff !important;
+    color: #14243c !important;
+    border: 1px solid #cbd6e3 !important;
+}
+
+.stApp .stButton button[kind="secondary"] p,
+.stApp .stDownloadButton button[kind="secondary"] p {
+    color: #14243c !important;
+}
+
+/* Primary buttons remain navy or teal */
+.stApp .stButton button[kind="primary"],
+.stApp .stDownloadButton button[kind="primary"] {
+    background: var(--rni-accent) !important;
+    color: #ffffff !important;
+    border-color: var(--rni-accent) !important;
+}
+
+/* Other text and visual elements */
+.stApp [data-testid="stCaptionContainer"] p {
+    color: #52647b !important;
+}
+
+.stApp [data-testid="stMetric"] {
+    background: #ffffff !important;
+}
+
+.stApp [data-testid="stExpander"] {
+    background: #ffffff !important;
+    color: #14243c !important;
+}
+
+.stApp [data-testid="stWidgetLabel"] p {
+    color: #14243c !important;
+}
+
+/* Focus and accessibility */
+.stApp :focus-visible {
+    outline: 2px solid var(--rni-accent) !important;
+    outline-offset: 2px;
+}
