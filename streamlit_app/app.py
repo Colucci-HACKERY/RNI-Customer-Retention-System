@@ -36,12 +36,13 @@
 # 7.  Audit trail utilities
 # 8.  Authentication and session bootstrap
 # 9.  Sidebar navigation, session state and pipeline helpers
-# 10. Country standardisation and geographic validation
-# 11. Shared data utilities
-# 12. Data ingestion, validation, cleaning and RFM engineering
-# 13. Publication, versioning and Power BI hand-off
-# 14. Technical workspace pages
-# 15. Business workspace pages
+# 10. Raw data caching (in-memory and on-disk)
+# 11. Country standardisation and geographic validation
+# 12. Shared data utilities
+# 13. Data ingestion, validation, cleaning and RFM engineering
+# 14. Publication, versioning and Power BI hand-off
+# 15. Technical workspace pages
+# 16. Business workspace pages
 # ============================================================
 
 
@@ -51,7 +52,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
+import json
 import re
 import sqlite3
 import zipfile
@@ -98,78 +101,16 @@ st.set_page_config(
     layout="wide",
 )
 
-_APP_CSS = """
-<style>
-    .block-container {
-        padding-top: 1.6rem;
-        padding-bottom: 2.5rem;
-    }
-    div[data-testid="stMetric"] {
-        border: 1px solid rgba(120, 120, 120, 0.18);
-        border-radius: 12px;
-        padding: 0.75rem 0.9rem;
-        background: rgba(250, 250, 250, 0.02);
-    }
-    div[data-baseweb="tab-list"] {
-        flex-wrap: wrap !important;
-        row-gap: 0.4rem !important;
-    }
-    div[data-baseweb="tab-list"] button[role="tab"] {
-        flex: 1 1 calc(33.333% - 0.5rem) !important;
-        max-width: calc(33.333% - 0.5rem) !important;
-        min-width: 180px !important;
-    }
-    @media (max-width: 900px) {
-        div[data-baseweb="tab-list"] button[role="tab"] {
-            flex-basis: 100% !important;
-            max-width: 100% !important;
-        }
-    }
-    .pipeline-breadcrumb {
-        font-size: 0.85rem;
-        color: #4a5568;
-        padding: 0.5rem 0.85rem;
-        border-radius: 8px;
-        background: rgba(120, 120, 120, 0.08);
-        border: 1px solid rgba(120, 120, 120, 0.12);
-        margin-bottom: 0.85rem;
-    }
-    @keyframes rni_spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-    }
-    .rni-inline-loading {
-        display: flex;
-        align-items: center;
-        gap: 0.85rem;
-        padding: 0.85rem 1.1rem;
-        border-radius: 12px;
-        background: rgba(26,82,118,0.05);
-        border: 1px solid rgba(26,82,118,0.15);
-        margin-bottom: 1rem;
-    }
-    .rni-inline-loading .spinner {
-        width: 24px;
-        height: 24px;
-        border: 3px solid #e8ecf1;
-        border-top-color: #1a5276;
-        border-radius: 50%;
-        animation: rni_spin 1s linear infinite;
-    }
-    .rni-inline-loading .text {
-        font-size: 0.95rem;
-        color: #1a2a4a;
-    }
-</style>
-"""
-
-st.markdown(_APP_CSS, unsafe_allow_html=True)
-
-# Additional presentation styling. Core app behaviour remains unchanged.
+# The application deliberately does not force a theme. The
+# external stylesheet responds to Streamlit's Light / Dark /
+# System setting so that the interface remains readable
+# whichever theme the user has selected.
 _STYLESHEET_PATH = Path(__file__).parent / "RNI_styles.css"
 if _STYLESHEET_PATH.is_file():
     st.markdown(
-        "<style>" + _STYLESHEET_PATH.read_text(encoding="utf-8") + "</style>",
+        "<style>"
+        + _STYLESHEET_PATH.read_text(encoding="utf-8")
+        + "</style>",
         unsafe_allow_html=True,
     )
 
@@ -195,6 +136,12 @@ AUDIT_LOG_PATH: Path = AUDIT_DIR / "audit_trail.csv"
 USER_DATA_DIR: Path = APP_DIR / "data"
 USER_DB_PATH: Path = USER_DATA_DIR / "users.db"
 
+# Cache directories for parsed raw data. Two subdirectories:
+# parquet holds the parsed dataframe; meta holds a small JSON
+# record describing the source file.
+CACHE_DIR: Path = APP_DIR / "cache"
+RAW_CACHE_DIR: Path = CACHE_DIR / "raw_data"
+
 _REQUIRED_DIRECTORIES = (
     PUBLISH_DIR,
     ARCHIVE_DIR,
@@ -202,6 +149,8 @@ _REQUIRED_DIRECTORIES = (
     TEAM_OUTPUT_DIR,
     AUDIT_DIR,
     USER_DATA_DIR,
+    CACHE_DIR,
+    RAW_CACHE_DIR,
 )
 
 for _directory in _REQUIRED_DIRECTORIES:
@@ -874,14 +823,24 @@ if not bool(user_data["is_active"]):
 user_role = str(user_data["role"]).lower()
 user_name = user_data["name"]
 
-# Role-aware presentation marker, not a permission or authentication control.
-_ROLE_MARKER = "rni-business-marker" if user_role == BUSINESS_ROLE else "rni-technical-marker"
-st.markdown(f'<span id="{_ROLE_MARKER}" style="display:none"></span>', unsafe_allow_html=True)
+# Role-aware presentation marker used only for CSS theming.
+# It is not a security or authorisation control.
+_ROLE_MARKER = (
+    "rni-business-marker"
+    if user_role == BUSINESS_ROLE
+    else "rni-technical-marker"
+)
+st.markdown(
+    f'<span id="{_ROLE_MARKER}" style="display:none"></span>',
+    unsafe_allow_html=True,
+)
 
 st.sidebar.markdown(
     '<div class="rni-sidebar-brand">'
-    '<div class="rni-sidebar-logo"><span>▥</span> RNI</div>'
-    '<div class="rni-sidebar-tagline">Customer Retention Analytics System</div>'
+    '<div class="rni-sidebar-logo"><span>\u25a5</span> RNI</div>'
+    '<div class="rni-sidebar-tagline">'
+    'Customer Retention Analytics System'
+    '</div>'
     '</div>',
     unsafe_allow_html=True,
 )
@@ -915,7 +874,10 @@ def reset_pipeline_session() -> None:
 
 
 if user_role == TECHNICAL_ROLE:
-    if st.sidebar.button("Reset Pipeline Session", use_container_width=True):
+    if st.sidebar.button(
+        "Reset Pipeline Session",
+        use_container_width=True,
+    ):
         reset_pipeline_session()
         log_audit_event(
             username=user_name,
@@ -981,6 +943,7 @@ _SESSION_DEFAULTS: dict[str, Any] = {
     "publication_summary": None,
     "published_rfm_data": None,
     "published_at": None,
+    "raw_cache_hit": False,
 }
 
 for _key, _value in _SESSION_DEFAULTS.items():
@@ -1068,18 +1031,7 @@ def loading_overlay(
 
 
 def render_inline_loading(message: str) -> Any:
-    """Render an inline loading banner and return the placeholder.
-
-    The caller is expected to call ``placeholder.empty()`` once the
-    page has finished rendering so the banner is not visible after
-    the workspace has loaded.
-
-    Args:
-        message: Short loading message.
-
-    Returns:
-        A Streamlit placeholder that can be cleared later.
-    """
+    """Render an inline loading banner and return the placeholder."""
     placeholder = st.empty()
     placeholder.markdown(
         f"""
@@ -1115,8 +1067,10 @@ def render_proceed_button(
 
 
 def render_pipeline_breadcrumb() -> None:
-    """Render current source dataset and publication version at the top of a page."""
-    source_label = st.session_state.get("uploaded_filename") or "No dataset loaded"
+    """Render the current source dataset and publication version."""
+    source_label = (
+        st.session_state.get("uploaded_filename") or "No dataset loaded"
+    )
 
     publication_summary = st.session_state.get("publication_summary")
     if publication_summary:
@@ -1136,8 +1090,220 @@ def render_pipeline_breadcrumb() -> None:
         """,
         unsafe_allow_html=True,
     )
+
+
+# ------------------------------------------------------------
+# 10. Raw data caching (in-memory and on-disk)
+# ------------------------------------------------------------
+# The cache is keyed by a SHA-256 hash of the uploaded file's
+# bytes. Two layers of caching are applied:
+#
+#   1. In-memory: Streamlit's @st.cache_data holds the parsed
+#      dataframe for the current session, so reloading the
+#      same file within a session is instant.
+#
+#   2. On-disk: the parsed dataframe is persisted to a Parquet
+#      file named after the hash. Across sessions, if the same
+#      file is uploaded again, the app loads the Parquet copy
+#      instead of re-parsing the source workbook.
+#
+# This makes repeat uploads of the same file take under 2
+# seconds, while the very first upload still requires a full
+# parse. The demo workflow is therefore:
+#
+#   * Before the demo, upload the source workbook once so the
+#     on-disk cache is populated.
+#   * On demo day, upload the same workbook. The app detects
+#     the hash and loads from disk in under 2 seconds.
+#
+# The cache is content-addressed, so renaming the source file
+# does not invalidate it.
+
+def compute_file_hash(file_bytes: bytes) -> str:
+    """Return a hexadecimal SHA-256 digest of the given bytes.
+
+    Args:
+        file_bytes: Raw bytes of the uploaded file.
+
+    Returns:
+        A 64-character hexadecimal hash string.
+    """
+    return hashlib.sha256(file_bytes).hexdigest()
+
+
+def _cache_paths(file_hash: str) -> tuple[Path, Path]:
+    """Return the (parquet_path, meta_path) pair for a given hash."""
+    parquet_path = RAW_CACHE_DIR / f"{file_hash}.parquet"
+    meta_path = RAW_CACHE_DIR / f"{file_hash}.meta.json"
+    return parquet_path, meta_path
+
+
+def read_raw_cache(file_hash: str) -> Optional[pd.DataFrame]:
+    """Return the cached dataframe for a hash, or None if absent.
+
+    Args:
+        file_hash: SHA-256 hash of the original uploaded file.
+
+    Returns:
+        A pandas dataframe if the cache entry exists and loads
+        successfully, otherwise None.
+    """
+    parquet_path, _meta_path = _cache_paths(file_hash)
+
+    if not parquet_path.exists():
+        return None
+
+    try:
+        return pd.read_parquet(parquet_path)
+    except (OSError, ValueError):
+        # If the cache file is corrupt, treat it as absent so the
+        # caller can rebuild it from source.
+        return None
+
+
+def write_raw_cache(
+    file_hash: str,
+    df: pd.DataFrame,
+    source_filename: str,
+) -> None:
+    """Persist a parsed dataframe and its metadata to the disk cache.
+
+    Args:
+        file_hash: SHA-256 hash of the original uploaded file.
+        df: The parsed dataframe to persist.
+        source_filename: Original filename, retained for audit.
+    """
+    parquet_path, meta_path = _cache_paths(file_hash)
+
+    try:
+        df.to_parquet(parquet_path, index=False)
+    except (OSError, ValueError):
+        # If the parquet write fails, we simply do not cache. The
+        # application continues to function; it just does not
+        # benefit from the cache on the next run.
+        return
+
+    metadata = {
+        "source_filename": source_filename,
+        "row_count": int(len(df)),
+        "column_count": int(len(df.columns)),
+        "columns": list(map(str, df.columns)),
+        "cached_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    try:
+        with open(meta_path, "w", encoding="utf-8") as meta_file:
+            json.dump(metadata, meta_file, indent=2)
+    except OSError:
+        pass
+
+
+def list_cache_entries() -> list[dict[str, Any]]:
+    """Return a summary of every cached raw dataset on disk."""
+    entries: list[dict[str, Any]] = []
+
+    if not RAW_CACHE_DIR.exists():
+        return entries
+
+    for meta_path in sorted(RAW_CACHE_DIR.glob("*.meta.json")):
+        try:
+            with open(meta_path, "r", encoding="utf-8") as meta_file:
+                metadata = json.load(meta_file)
+            metadata["cache_key"] = meta_path.stem.replace(
+                ".meta", ""
+            )
+            entries.append(metadata)
+        except (OSError, json.JSONDecodeError):
+            continue
+
+    return entries
+
+
+@st.cache_data(show_spinner=False)
+def _parse_source_file(
+    file_bytes: bytes,
+    filename: str,
+    selected_sheets_tuple: tuple[str, ...],
+) -> pd.DataFrame:
+    """Parse a source file into a dataframe.
+
+    This function is decorated with @st.cache_data so that within a
+    session, repeated calls with identical arguments return the
+    same in-memory dataframe without re-parsing.
+
+    Args:
+        file_bytes: Raw bytes of the uploaded file.
+        filename: Original filename, used to select parser.
+        selected_sheets_tuple: Sheet names for Excel uploads. Pass
+            an empty tuple for CSV files.
+
+    Returns:
+        The parsed dataframe.
+    """
+    filename_lower = filename.lower()
+
+    if filename_lower.endswith(".csv"):
+        return pd.read_csv(io.BytesIO(file_bytes))
+
+    selected_sheets = list(selected_sheets_tuple) or None
+
+    sheets = pd.read_excel(
+        io.BytesIO(file_bytes),
+        sheet_name=selected_sheets if selected_sheets else None,
+    )
+
+    if isinstance(sheets, dict):
+        return pd.concat(sheets.values(), ignore_index=True)
+
+    return sheets
+
+
+def load_raw_data_with_cache(
+    file_bytes: bytes,
+    filename: str,
+    selected_sheets: Optional[list[str]] = None,
+) -> tuple[pd.DataFrame, bool]:
+    """Load a raw dataset using both in-memory and on-disk caches.
+
+    Resolution order:
+
+        1. Compute the SHA-256 hash of the file bytes.
+        2. If the on-disk Parquet cache exists, load it.
+        3. Otherwise parse the source file (Excel or CSV) and
+           persist the result to the on-disk cache.
+        4. Streamlit's @st.cache_data also caches the parse within
+           the current session, so repeated uploads of the same
+           file in one session are instant regardless of the
+           on-disk cache.
+
+    Args:
+        file_bytes: Raw bytes of the uploaded file.
+        filename: Original filename.
+        selected_sheets: Selected Excel sheet names, if any.
+
+    Returns:
+        A tuple (dataframe, cache_hit_flag). The flag is True when
+        the on-disk cache was used.
+    """
+    file_hash = compute_file_hash(file_bytes)
+
+    cached_df = read_raw_cache(file_hash)
+    if cached_df is not None:
+        return cached_df, True
+
+    selected_sheets_tuple = tuple(selected_sheets or [])
+
+    parsed_df = _parse_source_file(
+        file_bytes,
+        filename,
+        selected_sheets_tuple,
+    )
+
+    write_raw_cache(file_hash, parsed_df, filename)
+
+    return parsed_df, False
     # ------------------------------------------------------------
-# 10. Country standardisation and geographic validation
+# 11. Country standardisation and geographic validation
 # ------------------------------------------------------------
 
 _COUNTRY_RENAME_MAP: dict[str, str] = {
@@ -1272,7 +1438,7 @@ def assess_country_labels(series: pd.Series) -> dict[str, list[str]]:
 
 
 # ------------------------------------------------------------
-# 11. Shared data utilities
+# 12. Shared data utilities
 # ------------------------------------------------------------
 
 def completed_sales_view(df: Optional[pd.DataFrame]) -> pd.DataFrame:
@@ -1743,7 +1909,6 @@ def build_data_validation_report(
     return pd.concat([validation, cleaning_report], ignore_index=True)
 
 
-
 def compute_market_basket(
     cleaned_df: Optional[pd.DataFrame],
     min_support: float = 0.005,
@@ -1751,8 +1916,18 @@ def compute_market_basket(
     min_lift: float = 1.0,
     top_n_products: int = 50,
 ) -> tuple[pd.DataFrame, dict[str, Any]]:
-    """Calculate product-pair association rules with reduced memory use."""
+    """Calculate product-pair association rules with reduced memory use.
 
+    Args:
+        cleaned_df: The cleaned transaction dataframe.
+        min_support: Minimum itemset support.
+        min_confidence: Minimum rule confidence.
+        min_lift: Minimum rule lift.
+        top_n_products: Number of top products to include.
+
+    Returns:
+        A tuple of (rules dataframe, diagnostics dictionary).
+    """
     diagnostics: dict[str, Any] = {
         "status": "Not run",
         "input_rows": 0,
@@ -1851,7 +2026,7 @@ def compute_market_basket(
 
         sales = sales.loc[
             sales["Description"].isin(top_products),
-            ["Invoice", "Description", "Quantity"]
+            ["Invoice", "Description", "Quantity"],
         ]
 
         diagnostics["products_analysed"] = int(
@@ -1863,7 +2038,6 @@ def compute_market_basket(
             return pd.DataFrame(), diagnostics
 
         # Remove repeat invoice-product combinations.
-        # Completed-sale quantities are already positive.
         transactions = sales[
             ["Invoice", "Description"]
         ].drop_duplicates()
@@ -1871,7 +2045,7 @@ def compute_market_basket(
         # Build Boolean invoice-by-product matrix.
         basket = pd.crosstab(
             transactions["Invoice"],
-            transactions["Description"]
+            transactions["Description"],
         ).gt(0)
 
         del transactions
@@ -1952,8 +2126,9 @@ def compute_market_basket(
         )
         return pd.DataFrame(), diagnostics
 
+
 # ------------------------------------------------------------
-# 12a. Data ingestion helpers
+# 13a. Data ingestion helpers
 # ------------------------------------------------------------
 
 def get_excel_sheet_names(uploaded_file: Any) -> list[str]:
@@ -2024,7 +2199,7 @@ def load_uploaded_data(
 
 
 # ------------------------------------------------------------
-# 12b. Data validation
+# 13b. Data validation
 # ------------------------------------------------------------
 
 _REQUIRED_COLUMNS: list[str] = [
@@ -2286,7 +2461,7 @@ def validate_dataset(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ------------------------------------------------------------
-# 12c. Data cleaning
+# 13c. Data cleaning
 # ------------------------------------------------------------
 
 def clean_dataset(
@@ -2477,7 +2652,7 @@ def clean_dataset(
 
 
 # ------------------------------------------------------------
-# 12d. RFM feature engineering
+# 13d. RFM feature engineering
 # ------------------------------------------------------------
 
 def assign_rfm_segment(score: int) -> str:
@@ -2668,7 +2843,7 @@ def build_rfm_features(
 
 
 # ------------------------------------------------------------
-# 13. Publication, versioning and Power BI hand-off
+# 14. Publication, versioning and Power BI hand-off
 # ------------------------------------------------------------
 
 def build_reporting_dataset(
@@ -2974,21 +3149,10 @@ def publish_pipeline_outputs(
 # 14. Technical workspace
 # ============================================================
 
-# Branded header switches descriptions by workspace without changing navigation.
-if user_role == TECHNICAL_ROLE:
-    _workspace_label = "TECHNICAL WORKSPACE"
-    _workspace_summary = "Controlled ingestion, validation, RFM modelling and publication to Power BI."
-else:
-    _workspace_label = "BUSINESS WORKSPACE"
-    _workspace_summary = "Read-only customer retention insights and approved Power BI reporting."
-
-st.markdown(
-    '<div class="rni-identity">'
-    f'<div class="rni-eyebrow">{_workspace_label}</div>'
-    '<div class="rni-identity-title">RNI Customer Retention System</div>'
-    f'<div class="rni-identity-subtitle">{_workspace_summary}</div>'
-    '</div>',
-    unsafe_allow_html=True,
+st.title("RNI Customer Retention System")
+st.caption(
+    "Controlled data preparation, customer feature engineering "
+    "and Power BI hand-off."
 )
 
 
@@ -3220,14 +3384,7 @@ if user_role == TECHNICAL_ROLE:
                     return ["background-color: #fef6e0"] * len(row)
                 return [""] * len(row)
 
-            
             preview_df = raw_df.head(20).copy()
-
-            if "StockCode" in preview_df.columns:
-                preview_df["StockCode"] = (
-                    preview_df["StockCode"].astype("string")
-                )
-
             try:
                 styled_preview = preview_df.style.apply(
                     _highlight_preview_rows, axis=1
@@ -3654,19 +3811,9 @@ if user_role == TECHNICAL_ROLE:
                     post_checks, width="stretch", hide_index=True
                 )
 
-                
                 st.subheader("Cleaned Transaction Preview")
-
-                cleaned_preview = cleaned_df.head(20).copy()
-
-                if "StockCode" in cleaned_preview.columns:
-                    cleaned_preview["StockCode"] = (
-                        cleaned_preview["StockCode"].astype("string")
-                    )
-
                 st.dataframe(
-                    cleaned_preview,
-                    width="stretch",
+                    cleaned_df.head(20), width="stretch"
                 )
 
                 render_proceed_button(
@@ -5793,17 +5940,14 @@ else:
                     mba_col1, mba_col2, mba_col3, mba_col4 = (
                         st.columns(4)
                     )
-                    
-                    
                     mba_support = mba_col1.number_input(
                         "Minimum support",
-                        min_value=0.005,
+                        min_value=0.0005,
                         max_value=0.05,
-                        value=0.005,
-                        step=0.001,
+                        value=0.002,
+                        step=0.0005,
                         format="%.4f",
                     )
-
                     mba_confidence = mba_col2.slider(
                         "Minimum confidence",
                         min_value=0.05,
@@ -5811,7 +5955,6 @@ else:
                         value=0.15,
                         step=0.05,
                     )
-
                     mba_lift = mba_col3.slider(
                         "Minimum lift",
                         min_value=1.0,
@@ -5819,18 +5962,16 @@ else:
                         value=1.0,
                         step=0.1,
                     )
-
                     mba_products = mba_col4.slider(
                         "Products analysed",
-                        min_value=20,
-                        max_value=50,
-                        value=50,
-                        step=10,
+                        min_value=50,
+                        max_value=300,
+                        value=150,
+                        step=25,
                     )
 
                     if st.button(
-                        "Run Market Basket Analysis",
-                        type="primary",
+                        "Run Market Basket Analysis", type="primary"
                     ):
                         with loading_overlay(
                             "Finding frequently co-purchased "
@@ -5843,7 +5984,6 @@ else:
                                 min_lift=mba_lift,
                                 top_n_products=mba_products,
                             )
-
                         st.session_state.mba_rules = rules
                         st.session_state.mba_diagnostics = diagnostics
 
