@@ -1,15 +1,21 @@
 /* ============================================================
-   RNI CUSTOMER RETENTION SYSTEM — PRESENTATION THEME
+   RNI CUSTOMER RETENTION SYSTEM — LIGHT THEME
    ------------------------------------------------------------
-   This stylesheet adapts automatically to Streamlit's
-   Light / Dark / System theme setting.
-   Technical workspace: navy / blue accents
-   Business workspace:  navy / teal accents
+   Streamlit is pinned to Light mode in .streamlit/config.toml.
+   This stylesheet is therefore a single-palette Light theme:
+   there are deliberately no @media (prefers-color-scheme) blocks
+   because that media query fires based on the OPERATING SYSTEM
+   setting, not Streamlit's own theme toggle. Relying on it caused
+   Streamlit's dark chrome to render against this stylesheet's
+   light tokens, producing unreadable labels and buttons.
+
+   Technical workspace: navy / blue accents (default).
+   Business workspace:  navy / teal accents (marker-based).
    ============================================================ */
 
 
 /* ------------------------------------------------------------
-   Shared design tokens — applied to both themes
+   Shared design tokens
    ------------------------------------------------------------ */
 
 :root {
@@ -22,99 +28,48 @@
 
     --rni-transition-fast: 0.15s ease;
     --rni-transition-medium: 0.25s ease;
-}
 
+    /* Neutral surface */
+    --rni-bg: #f5f8fc;
+    --rni-surface: #ffffff;
+    --rni-surface-alt: #eef3f9;
+    --rni-border: #d9e2ed;
+    --rni-border-strong: #c1cddd;
 
-/* ------------------------------------------------------------
-   LIGHT THEME
-   ------------------------------------------------------------ */
+    /* Text */
+    --rni-text: #14243c;
+    --rni-text-muted: #5a6b84;
+    --rni-text-soft: #8496ae;
 
-@media (prefers-color-scheme: light) {
-    :root {
-        /* Neutral surface */
-        --rni-bg: #f5f8fc;
-        --rni-surface: #ffffff;
-        --rni-surface-alt: #eef3f9;
-        --rni-border: #d9e2ed;
-        --rni-border-strong: #c1cddd;
+    /* Technical workspace accents */
+    --rni-tech-accent: #1a5276;
+    --rni-tech-accent-hover: #123c58;
+    --rni-tech-accent-soft: #e3ecf4;
+    --rni-tech-on-accent: #ffffff;
 
-        /* Text */
-        --rni-text: #14243c;
-        --rni-text-muted: #5a6b84;
-        --rni-text-soft: #8496ae;
+    /* Business workspace accents */
+    --rni-biz-accent: #0e7c6b;
+    --rni-biz-accent-hover: #0a5f52;
+    --rni-biz-accent-soft: #ddf1ee;
+    --rni-biz-on-accent: #ffffff;
 
-        /* Technical workspace accents */
-        --rni-tech-accent: #1a5276;
-        --rni-tech-accent-hover: #123c58;
-        --rni-tech-accent-soft: #e3ecf4;
-        --rni-tech-on-accent: #ffffff;
+    /* Sidebar */
+    --rni-sidebar-bg: #ffffff;
+    --rni-sidebar-border: #e2e9f1;
 
-        /* Business workspace accents */
-        --rni-biz-accent: #0e7c6b;
-        --rni-biz-accent-hover: #0a5f52;
-        --rni-biz-accent-soft: #ddf1ee;
-        --rni-biz-on-accent: #ffffff;
-
-        /* Sidebar */
-        --rni-sidebar-bg: #ffffff;
-        --rni-sidebar-border: #e2e9f1;
-
-        /* Charts / cards */
-        --rni-card-bg: #ffffff;
-        --rni-card-border: #e4ebf3;
-        --rni-shadow: 0 1px 2px rgba(20, 36, 60, 0.04),
-                      0 4px 12px rgba(20, 36, 60, 0.05);
-    }
-}
-
-
-/* ------------------------------------------------------------
-   DARK THEME
-   ------------------------------------------------------------ */
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        /* Neutral surface */
-        --rni-bg: #09131f;
-        --rni-surface: #101f34;
-        --rni-surface-alt: #16283f;
-        --rni-border: #223754;
-        --rni-border-strong: #2f4b6d;
-
-        /* Text */
-        --rni-text: #edf4ff;
-        --rni-text-muted: #b4c6df;
-        --rni-text-soft: #93a9c7;
-
-        /* Technical workspace accents */
-        --rni-tech-accent: #4f9ce8;
-        --rni-tech-accent-hover: #6db1f3;
-        --rni-tech-accent-soft: #14355c;
-        --rni-tech-on-accent: #ffffff;
-
-        /* Business workspace accents */
-        --rni-biz-accent: #2ed3ad;
-        --rni-biz-accent-hover: #4ee0bf;
-        --rni-biz-accent-soft: #143b38;
-        --rni-biz-on-accent: #06221e;
-
-        /* Sidebar */
-        --rni-sidebar-bg: #0a1b31;
-        --rni-sidebar-border: #1f3a5c;
-
-        /* Charts / cards */
-        --rni-card-bg: #12223a;
-        --rni-card-border: #223754;
-        --rni-shadow: 0 1px 2px rgba(0, 0, 0, 0.25),
-                      0 6px 18px rgba(0, 0, 0, 0.35);
-    }
+    /* Charts / cards */
+    --rni-card-bg: #ffffff;
+    --rni-card-border: #e4ebf3;
+    --rni-shadow: 0 1px 2px rgba(20, 36, 60, 0.04),
+                  0 4px 12px rgba(20, 36, 60, 0.05);
 }
 
 
 /* ------------------------------------------------------------
    Workspace-scoped accent overrides
    ------------------------------------------------------------ */
-/* Default to technical accent; business marker overrides. */
+/* Default to the technical accent; the business workspace
+   marker overrides the accent tokens after login. */
 
 .stApp {
     --rni-accent: var(--rni-tech-accent);
@@ -422,21 +377,13 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
 /* ------------------------------------------------------------
    Login screen (streamlit-authenticator)
    ------------------------------------------------------------
-   streamlit-authenticator does NOT wrap its login widget in
-   [data-testid="stForm"]. It renders raw BaseWeb inputs and a
-   submit button directly inside the main block. That means in
-   dark mode the card stays white while BaseWeb resolves to
-   dark-theme tokens, making labels and button text invisible.
+   streamlit-authenticator renders its login widget directly in
+   the main block — not inside [data-testid="stForm"]. The
+   selectors below target the signed-out state only (i.e. while
+   neither workspace marker is present) and become inert as soon
+   as the user is authenticated. */
 
-   The login state is uniquely identifiable: neither workspace
-   marker is present until the user signs in. The selectors
-   below therefore only apply to the signed-out screen and
-   become inert as soon as #rni-technical-marker or
-   #rni-business-marker is injected by the app after login.
-   ------------------------------------------------------------ */
-
-/* The login card itself — a nested vertical block inside the
-   main block. Constrain width, give it a themed surface. */
+/* Login card */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"]
 > [data-testid="stVerticalBlock"]
@@ -451,7 +398,6 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     color: var(--rni-text);
 }
 
-/* Headings inside the login card follow the theme text colour. */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"]
 > [data-testid="stVerticalBlock"]
@@ -467,9 +413,7 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     color: var(--rni-text) !important;
 }
 
-/* Widget labels. Streamlit wraps them in stWidgetLabel; forcing
-   the theme text colour keeps them readable on the card in
-   both light and dark modes. */
+/* Labels */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] label,
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
@@ -478,8 +422,7 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     font-weight: 550;
 }
 
-/* BaseWeb text input fields. Without this, dark mode shows
-   black-on-white input boxes on the white card. */
+/* BaseWeb text inputs */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] div[data-baseweb="input"],
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
@@ -503,7 +446,7 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     color: var(--rni-text-soft) !important;
 }
 
-/* Password reveal eye icon — inherits poorly in dark mode. */
+/* Password reveal icon */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] div[data-baseweb="input"] button,
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
@@ -512,9 +455,7 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     fill: var(--rni-text-muted) !important;
 }
 
-/* The Login submit button. streamlit-authenticator renders it
-   as a BaseWeb submit button, NOT an st.button, so it never
-   picks up the primary-kind styles above. */
+/* Login submit button */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] button[kind="secondaryFormSubmit"],
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
@@ -541,9 +482,7 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
     color: var(--rni-on-accent) !important;
 }
 
-/* "Please log in to continue." info alert. Streamlit's default
-   is very low-contrast against the dark theme background, so we
-   recolour it against the accent-soft token. */
+/* Login alert ("Please log in to continue.") */
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] div[data-testid="stAlert"] {
     background-color: var(--rni-accent-soft) !important;
@@ -556,6 +495,45 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stMainBlockContainer"] div[data-testid="stAlert"] span {
     color: var(--rni-text) !important;
+}
+
+
+/* ------------------------------------------------------------
+   Native Streamlit widget colours
+   ------------------------------------------------------------
+   Checkboxes, radios, sliders, focus rings and the file
+   uploader would otherwise use the static primaryColor from
+   .streamlit/config.toml and would not switch between the
+   Technical navy-blue and the Business teal. The rules below
+   redirect them at --rni-accent, so they follow the active
+   workspace just like the metric cards and primary buttons. */
+
+.stApp input[type="checkbox"],
+.stApp input[type="radio"] {
+    accent-color: var(--rni-accent);
+}
+
+.stApp [data-baseweb="checkbox"] div[role="checkbox"][aria-checked="true"],
+.stApp [data-baseweb="radio"] div[role="radio"][aria-checked="true"] {
+    background-color: var(--rni-accent) !important;
+    border-color: var(--rni-accent) !important;
+}
+
+.stApp [data-baseweb="slider"] div[role="slider"] {
+    background-color: var(--rni-accent) !important;
+}
+
+.stApp [data-baseweb="slider"] [data-testid="stSliderTickBar"] {
+    background: var(--rni-accent) !important;
+}
+
+.stApp [data-testid="stFileUploaderDropzoneInstructions"] svg,
+.stApp [data-testid="stFileUploader"] svg {
+    fill: var(--rni-accent) !important;
+}
+
+.stApp :focus-visible {
+    outline-color: var(--rni-accent) !important;
 }
 
 
