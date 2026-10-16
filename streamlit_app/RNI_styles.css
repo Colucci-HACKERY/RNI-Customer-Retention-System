@@ -611,3 +611,198 @@ div[data-baseweb="tab-list"] button[aria-selected="true"] {
         padding: 1.2rem 0.9rem 2rem;
     }
 }
+
+
+/* ============================================================
+   RNI — READABILITY & VISIBILITY REPAIR
+   Works with the existing Technical / Business theme markers.
+   ============================================================ */
+
+/* 1. Stronger readable text palette */
+:root {
+    --rni-text: #17263d;
+    --rni-text-muted: #43546b;
+    --rni-text-soft: #53647b;
+    --rni-border: #cbd6e3;
+    --rni-card-border: #d4deea;
+    --rni-surface-alt: #f4f7fb;
+}
+
+/* 2. Main page typography */
+.stApp,
+.stApp [data-testid="stMain"] {
+    color: var(--rni-text);
+}
+
+.stApp [data-testid="stMarkdownContainer"] p,
+.stApp [data-testid="stMarkdownContainer"] li {
+    line-height: 1.65;
+}
+
+.stApp h1,
+.stApp h2,
+.stApp h3,
+.stApp h4 {
+    color: var(--rni-text) !important;
+    line-height: 1.3;
+}
+
+.stApp [data-testid="stCaptionContainer"],
+.stApp .stCaption {
+    color: var(--rni-text-muted) !important;
+}
+
+/* 3. Sidebar readability */
+section[data-testid="stSidebar"] {
+    background-color: #ffffff !important;
+    color: var(--rni-text) !important;
+}
+
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span {
+    color: var(--rni-text);
+}
+
+section[data-testid="stSidebar"]
+[role="radiogroup"] label {
+    min-height: 42px;
+    padding: 0.55rem 0.7rem;
+    border-radius: 9px;
+}
+
+section[data-testid="stSidebar"]
+[role="radiogroup"] label:has(input:checked) {
+    background: var(--rni-accent-soft) !important;
+    box-shadow: inset 4px 0 0 var(--rni-accent);
+}
+
+section[data-testid="stSidebar"]
+[role="radiogroup"] label:has(input:checked) p {
+    color: var(--rni-text) !important;
+    font-weight: 700 !important;
+}
+
+/* 4. Clear form fields and readable input values */
+.stApp div[data-baseweb="input"],
+.stApp div[data-baseweb="select"],
+.stApp div[data-baseweb="textarea"],
+.stApp [data-testid="stNumberInput"] input {
+    background-color: #ffffff;
+    color: var(--rni-text);
+    border-color: var(--rni-border);
+}
+
+.stApp input,
+.stApp textarea {
+    color: var(--rni-text) !important;
+    caret-color: var(--rni-accent);
+}
+
+.stApp input::placeholder,
+.stApp textarea::placeholder {
+    color: #63738a !important;
+    opacity: 1;
+}
+
+.stApp [data-testid="stWidgetLabel"] p {
+    color: var(--rni-text) !important;
+    font-weight: 600;
+}
+
+/* 5. Buttons: preserve readable text */
+.stApp .stButton button[kind="primary"],
+.stApp .stDownloadButton button[kind="primary"],
+.stApp [data-testid="stFormSubmitButton"]
+button[kind="primaryFormSubmit"] {
+    background: var(--rni-accent) !important;
+    color: #ffffff !important;
+    border-color: var(--rni-accent) !important;
+}
+
+.stApp .stButton button[kind="secondary"],
+.stApp .stDownloadButton button[kind="secondary"] {
+    background: #ffffff;
+    color: var(--rni-text);
+    border: 1px solid var(--rni-border);
+}
+
+.stApp button:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+}
+
+/* 6. Tabs: stronger selected-state visibility */
+.stApp div[data-baseweb="tab-list"]
+button[role="tab"] {
+    color: var(--rni-text-muted) !important;
+    font-weight: 600;
+    min-height: 44px;
+    white-space: normal;
+}
+
+.stApp div[data-baseweb="tab-list"]
+button[role="tab"][aria-selected="true"] {
+    color: var(--rni-accent) !important;
+    background: var(--rni-accent-soft);
+    border-bottom: 3px solid var(--rni-accent) !important;
+    font-weight: 750;
+}
+
+/* 7. KPI metrics */
+.stApp div[data-testid="stMetric"] {
+    background: #ffffff !important;
+    border: 1px solid var(--rni-card-border);
+    border-top: 3px solid var(--rni-accent);
+}
+
+.stApp div[data-testid="stMetricLabel"] p {
+    color: var(--rni-text-muted) !important;
+    font-weight: 650;
+}
+
+.stApp div[data-testid="stMetricValue"] {
+    color: var(--rni-text) !important;
+}
+
+/* 8. Tables and dataframe containers */
+.stApp [data-testid="stDataFrame"],
+.stApp [data-testid="stTable"] {
+    background: #ffffff;
+    border: 1px solid var(--rni-border);
+    border-radius: 10px;
+}
+
+/* 9. Clear dividers and expandable sections */
+.stApp hr {
+    border-color: var(--rni-border);
+    opacity: 1;
+}
+
+.stApp [data-testid="stExpander"] {
+    background: #ffffff;
+    border: 1px solid var(--rni-border);
+    border-radius: 10px;
+}
+
+/* 10. Keyboard accessibility */
+.stApp :focus-visible {
+    outline: 2px solid var(--rni-accent) !important;
+    outline-offset: 2px;
+}
+
+/* 11. Smaller screens */
+@media (max-width: 900px) {
+    .stApp div[data-baseweb="tab-list"]
+    button[role="tab"] {
+        min-width: 0 !important;
+        max-width: 100% !important;
+        flex-basis: 100% !important;
+    }
+
+    .stApp [data-testid="stMainBlockContainer"] {
+        padding-left: 1rem;
+        padding-right: 1rem;
+    }
+}
+
