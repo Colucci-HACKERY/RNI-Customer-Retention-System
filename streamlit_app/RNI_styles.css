@@ -1,13 +1,6 @@
 /* ============================================================
    RNI CUSTOMER RETENTION SYSTEM — LIGHT THEME
    ------------------------------------------------------------
-   Streamlit is pinned to Light mode in .streamlit/config.toml.
-   This stylesheet is therefore a single-palette Light theme:
-   there are deliberately no @media (prefers-color-scheme) blocks
-   because that media query fires based on the OPERATING SYSTEM
-   setting, not Streamlit's own theme toggle. Relying on it caused
-   Streamlit's dark chrome to render against this stylesheet's
-   light tokens, producing unreadable labels and buttons.
 
    Technical workspace: navy / blue accents (default).
    Business workspace:  navy / teal accents (marker-based).
