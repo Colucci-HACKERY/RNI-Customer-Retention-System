@@ -1,180 +1,450 @@
-/* RNI presentation theme; scoped to Streamlit's existing widgets.
-   Technical = navy/blue; Business = navy/teal. No data or RBAC logic. */
-:root { color-scheme: dark; }
+/* ============================================================
+   RNI CUSTOMER RETENTION SYSTEM — PRESENTATION THEME
+   ------------------------------------------------------------
+   This stylesheet adapts automatically to Streamlit's
+   Light / Dark / System theme setting. 
+   Technical workspace: navy / blue accents
+   Business workspace:  navy / teal accents
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   Shared design tokens — applied to both themes
+   ------------------------------------------------------------ */
+
+:root {
+    --rni-radius-sm: 8px;
+    --rni-radius-md: 12px;
+    --rni-radius-lg: 16px;
+
+    --rni-font-stack: "Inter", "Segoe UI", system-ui,
+                      -apple-system, "Helvetica Neue", sans-serif;
+
+    --rni-transition-fast: 0.15s ease;
+    --rni-transition-medium: 0.25s ease;
+}
+
+
+/* ------------------------------------------------------------
+   LIGHT THEME
+   ------------------------------------------------------------ */
+
+@media (prefers-color-scheme: light) {
+    :root {
+        /* Neutral surface */
+        --rni-bg: #f5f8fc;
+        --rni-surface: #ffffff;
+        --rni-surface-alt: #eef3f9;
+        --rni-border: #d9e2ed;
+        --rni-border-strong: #c1cddd;
+
+        /* Text */
+        --rni-text: #14243c;
+        --rni-text-muted: #5a6b84;
+        --rni-text-soft: #8496ae;
+
+        /* Technical workspace accents */
+        --rni-tech-accent: #1a5276;
+        --rni-tech-accent-hover: #123c58;
+        --rni-tech-accent-soft: #e3ecf4;
+        --rni-tech-on-accent: #ffffff;
+
+        /* Business workspace accents */
+        --rni-biz-accent: #0e7c6b;
+        --rni-biz-accent-hover: #0a5f52;
+        --rni-biz-accent-soft: #ddf1ee;
+        --rni-biz-on-accent: #ffffff;
+
+        /* Sidebar */
+        --rni-sidebar-bg: #ffffff;
+        --rni-sidebar-border: #e2e9f1;
+
+        /* Charts / cards */
+        --rni-card-bg: #ffffff;
+        --rni-card-border: #e4ebf3;
+        --rni-shadow: 0 1px 2px rgba(20, 36, 60, 0.04),
+                      0 4px 12px rgba(20, 36, 60, 0.05);
+    }
+}
+
+
+/* ------------------------------------------------------------
+   DARK THEME
+   ------------------------------------------------------------ */
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        /* Neutral surface */
+        --rni-bg: #09131f;
+        --rni-surface: #101f34;
+        --rni-surface-alt: #16283f;
+        --rni-border: #223754;
+        --rni-border-strong: #2f4b6d;
+
+        /* Text */
+        --rni-text: #edf4ff;
+        --rni-text-muted: #b4c6df;
+        --rni-text-soft: #93a9c7;
+
+        /* Technical workspace accents */
+        --rni-tech-accent: #4f9ce8;
+        --rni-tech-accent-hover: #6db1f3;
+        --rni-tech-accent-soft: #14355c;
+        --rni-tech-on-accent: #ffffff;
+
+        /* Business workspace accents */
+        --rni-biz-accent: #2ed3ad;
+        --rni-biz-accent-hover: #4ee0bf;
+        --rni-biz-accent-soft: #143b38;
+        --rni-biz-on-accent: #06221e;
+
+        /* Sidebar */
+        --rni-sidebar-bg: #0a1b31;
+        --rni-sidebar-border: #1f3a5c;
+
+        /* Charts / cards */
+        --rni-card-bg: #12223a;
+        --rni-card-border: #223754;
+        --rni-shadow: 0 1px 2px rgba(0, 0, 0, 0.25),
+                      0 6px 18px rgba(0, 0, 0, 0.35);
+    }
+}
+
+
+/* ------------------------------------------------------------
+   Workspace-scoped accent overrides
+   ------------------------------------------------------------ */
+/* Default to technical accent; business marker overrides. */
+
 .stApp {
-    --rni-accent: #278CFA;
-    --rni-accent-hover: #1474DC;
-    --rni-edge: #223754;
-    --rni-card: #12223A;
-    --rni-soft: #93A9C7;
-    background: radial-gradient(ellipse at 93% -12%, #10294C 0%, #0B1424 33%, #090F1C 82%);
-    color: #EDF4FF;
+    --rni-accent: var(--rni-tech-accent);
+    --rni-accent-hover: var(--rni-tech-accent-hover);
+    --rni-accent-soft: var(--rni-tech-accent-soft);
+    --rni-on-accent: var(--rni-tech-on-accent);
 }
+
 .stApp:has(#rni-business-marker) {
-    --rni-accent: #13BD91;
-    --rni-accent-hover: #089F77;
-    --rni-edge: #1A4948;
-    --rni-card: #102D32;
-    --rni-soft: #9ABDB9;
-    background: radial-gradient(ellipse at 95% -5%, #103B38 0%, #0B1C22 38%, #09141D 86%);
+    --rni-accent: var(--rni-biz-accent);
+    --rni-accent-hover: var(--rni-biz-accent-hover);
+    --rni-accent-soft: var(--rni-biz-accent-soft);
+    --rni-on-accent: var(--rni-biz-on-accent);
 }
+
+
+/* ------------------------------------------------------------
+   Base app surfaces
+   ------------------------------------------------------------ */
+
+.stApp {
+    background: var(--rni-bg);
+    color: var(--rni-text);
+    font-family: var(--rni-font-stack);
+}
+
 .main .block-container,
 [data-testid="stMainBlockContainer"] {
     max-width: 1530px;
     padding-top: 1.75rem;
     padding-bottom: 3rem;
 }
-section[data-testid="stSidebar"] {
-    background: #0A1B31;
-    border-right: 1px solid #244264;
-}
-.stApp:has(#rni-business-marker) section[data-testid="stSidebar"] {
-    background: #0A262A;
-    border-right-color: #225452;
-}
-section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
-    padding-top: 1.4rem;
-}
-section[data-testid="stSidebar"] [role="radiogroup"] label {
-    border-radius: 10px;
-    padding: 0.36rem 0.55rem;
-    margin-bottom: 0.1rem;
-    transition: background 0.15s ease;
-}
-section[data-testid="stSidebar"] [role="radiogroup"] label:hover {
-    background: rgba(112,174,238,0.10);
-}
-section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
-    background: color-mix(in srgb, var(--rni-accent) 18%, transparent);
-    box-shadow: inset 3px 0 0 var(--rni-accent);
-}
-section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
-    color: #FFFFFF;
-    font-weight: 650;
-}
+
+
+/* ------------------------------------------------------------
+   Typography
+   ------------------------------------------------------------ */
+
 h1 {
     font-size: clamp(1.65rem, 2.25vw, 2.45rem) !important;
     line-height: 1.18 !important;
     letter-spacing: -0.035em;
+    color: var(--rni-text);
 }
-h2 { font-size: 1.5rem !important; letter-spacing: -0.018em; }
-h3 { font-size: 1.14rem !important; }
-[data-testid="stCaptionContainer"], .stCaption {
-    color: var(--rni-soft) !important;
+
+h2 {
+    font-size: 1.5rem !important;
+    letter-spacing: -0.018em;
+    color: var(--rni-text);
 }
+
+h3 {
+    font-size: 1.14rem !important;
+    color: var(--rni-text);
+}
+
+[data-testid="stCaptionContainer"],
+.stCaption {
+    color: var(--rni-text-soft) !important;
+}
+
+
+/* ------------------------------------------------------------
+   Sidebar
+   ------------------------------------------------------------ */
+
+section[data-testid="stSidebar"] {
+    background: var(--rni-sidebar-bg);
+    border-right: 1px solid var(--rni-sidebar-border);
+}
+
+section[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    padding-top: 1.4rem;
+}
+
+section[data-testid="stSidebar"] [role="radiogroup"] label {
+    border-radius: 10px;
+    padding: 0.36rem 0.55rem;
+    margin-bottom: 0.1rem;
+    transition: background var(--rni-transition-fast);
+}
+
+section[data-testid="stSidebar"] [role="radiogroup"] label:hover {
+    background: var(--rni-accent-soft);
+}
+
+section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) {
+    background: var(--rni-accent-soft);
+    box-shadow: inset 3px 0 0 var(--rni-accent);
+}
+
+section[data-testid="stSidebar"] [role="radiogroup"] label:has(input:checked) p {
+    color: var(--rni-text);
+    font-weight: 650;
+}
+
+
+/* ------------------------------------------------------------
+   Metric cards
+   ------------------------------------------------------------ */
+
 div[data-testid="stMetric"] {
-    background: linear-gradient(135deg, var(--rni-card), color-mix(in srgb, var(--rni-card) 85%, black));
-    border: 1px solid var(--rni-edge);
-    border-top: 2px solid color-mix(in srgb, var(--rni-accent) 55%, transparent);
-    border-radius: 15px;
+    background: var(--rni-card-bg);
+    border: 1px solid var(--rni-card-border);
+    border-top: 2px solid var(--rni-accent);
+    border-radius: var(--rni-radius-md);
     padding: 1.05rem 1.15rem;
     min-width: 0;
     height: 100%;
+    box-shadow: var(--rni-shadow);
 }
+
 div[data-testid="stMetricLabel"] p {
-    color: #B4C6DF !important;
+    color: var(--rni-text-muted) !important;
     font-size: 0.89rem;
     font-weight: 550;
 }
+
 div[data-testid="stMetricValue"] {
     font-weight: 750;
     letter-spacing: -0.04em;
     font-size: clamp(1.4rem, 2vw, 2.1rem);
     overflow-wrap: anywhere;
+    color: var(--rni-text);
 }
-div[data-testid="stVerticalBlockBorderWrapper"] > div[data-testid="stVerticalBlock"] {
-    border-color: var(--rni-edge);
+
+div[data-testid="stMetricDelta"] {
+    font-weight: 600;
 }
-.stButton button, .stDownloadButton button, .stLinkButton a {
+
+
+/* ------------------------------------------------------------
+   Buttons, links, downloads
+   ------------------------------------------------------------ */
+
+.stButton button,
+.stDownloadButton button,
+.stLinkButton a {
     border-radius: 10px !important;
     min-height: 2.65rem;
-    transition: filter .16s ease, border-color .16s ease;
+    transition: filter var(--rni-transition-fast),
+                border-color var(--rni-transition-fast);
+    font-weight: 550;
 }
-.stButton button:hover, .stDownloadButton button:hover, .stLinkButton a:hover {
+
+.stButton button:hover,
+.stDownloadButton button:hover,
+.stLinkButton a:hover {
     border-color: var(--rni-accent);
-    filter: brightness(1.08);
+    filter: brightness(1.06);
 }
-.stButton button[kind="primary"], .stDownloadButton button[kind="primary"],
+
+.stButton button[kind="primary"],
+.stDownloadButton button[kind="primary"],
 .stLinkButton a[kind="primary"] {
     background: var(--rni-accent) !important;
     border-color: var(--rni-accent) !important;
-    color: #FFFFFF !important;
+    color: var(--rni-on-accent) !important;
 }
-.stApp:has(#rni-business-marker) .stButton button[kind="primary"],
-.stApp:has(#rni-business-marker) .stLinkButton a[kind="primary"] {
-    color: #06221E !important;
+
+.stButton button[kind="primary"]:hover,
+.stDownloadButton button[kind="primary"]:hover,
+.stLinkButton a[kind="primary"]:hover {
+    background: var(--rni-accent-hover) !important;
+    border-color: var(--rni-accent-hover) !important;
 }
-div[data-testid="stDataFrame"], div[data-testid="stTable"] {
-    border: 1px solid var(--rni-edge);
-    border-radius: 12px;
+
+
+/* ------------------------------------------------------------
+   Dataframes, tables, alerts, file uploader
+   ------------------------------------------------------------ */
+
+div[data-testid="stDataFrame"],
+div[data-testid="stTable"] {
+    border: 1px solid var(--rni-card-border);
+    border-radius: var(--rni-radius-md);
     overflow: hidden;
 }
-div[data-testid="stAlert"] { border-radius: 12px; }
+
+div[data-testid="stAlert"] {
+    border-radius: var(--rni-radius-md);
+}
+
 div[data-testid="stFileUploader"] section {
-    border-radius: 12px;
-    border-color: var(--rni-edge);
+    border-radius: var(--rni-radius-md);
+    border-color: var(--rni-border);
+    background: var(--rni-surface);
 }
-.pipeline-breadcrumb {
-    color: #BDD0EA !important;
-    padding: 0.85rem 1rem !important;
-    border-radius: 11px !important;
-    background: var(--rni-card) !important;
-    border: 1px solid var(--rni-edge) !important;
-    overflow-wrap: anywhere;
+
+
+/* ------------------------------------------------------------
+   Tabs
+   ------------------------------------------------------------ */
+
+div[data-baseweb="tab-list"] {
+    flex-wrap: wrap !important;
+    gap: 0.45rem !important;
 }
-.stApp:has(#rni-business-marker) .pipeline-breadcrumb { color: #B4D8D4 !important; }
-div[data-baseweb="tab-list"] { flex-wrap: wrap !important; gap: .45rem !important; }
+
 div[data-baseweb="tab-list"] button[role="tab"] {
-    flex: 1 1 calc(33.333% - .5rem) !important;
+    flex: 1 1 calc(33.333% - 0.5rem) !important;
     min-width: 180px !important;
-    max-width: calc(33.333% - .5rem) !important;
+    max-width: calc(33.333% - 0.5rem) !important;
     border-radius: 10px 10px 0 0;
 }
+
 div[data-baseweb="tab-list"] button[aria-selected="true"] {
     border-bottom-color: var(--rni-accent) !important;
 }
-.rni-identity {
-    border: 1px solid var(--rni-edge);
-    border-radius: 15px;
-    padding: 1.05rem 1.15rem;
-    background: linear-gradient(100deg, var(--rni-card), transparent);
-    margin-bottom: 1.35rem;
+
+
+/* ------------------------------------------------------------
+   Custom RNI components
+   ------------------------------------------------------------ */
+
+.pipeline-breadcrumb {
+    color: var(--rni-text-muted) !important;
+    padding: 0.85rem 1rem !important;
+    border-radius: var(--rni-radius-md) !important;
+    background: var(--rni-surface) !important;
+    border: 1px solid var(--rni-border) !important;
+    overflow-wrap: anywhere;
 }
+
+.rni-identity {
+    border: 1px solid var(--rni-border);
+    border-radius: var(--rni-radius-lg);
+    padding: 1.05rem 1.15rem;
+    background: var(--rni-surface);
+    margin-bottom: 1.35rem;
+    box-shadow: var(--rni-shadow);
+}
+
 .rni-eyebrow {
-    font-size: .71rem;
+    font-size: 0.71rem;
     font-weight: 750;
     color: var(--rni-accent);
     text-transform: uppercase;
-    letter-spacing: .13em;
+    letter-spacing: 0.13em;
 }
+
 .rni-identity-title {
-    margin: .28rem 0 .3rem;
+    margin: 0.28rem 0 0.3rem;
     font-size: 1.17rem;
     font-weight: 760;
-    color: #F8FAFF;
+    color: var(--rni-text);
 }
-.rni-identity-subtitle { font-size: .88rem; color: var(--rni-soft); }
-.rni-sidebar-brand { padding: .55rem 0 1rem; }
-.rni-sidebar-logo { font-size: 1.65rem; font-weight: 830; color: #F8FBFF; letter-spacing: -.03em; }
-.rni-sidebar-logo span { color: var(--rni-accent); }
-.rni-sidebar-tagline { font-size: .8rem; color: #A3B9D3; }
+
+.rni-identity-subtitle {
+    font-size: 0.88rem;
+    color: var(--rni-text-soft);
+}
+
+.rni-sidebar-brand {
+    padding: 0.55rem 0 1rem;
+}
+
+.rni-sidebar-logo {
+    font-size: 1.65rem;
+    font-weight: 830;
+    color: var(--rni-text);
+    letter-spacing: -0.03em;
+}
+
+.rni-sidebar-logo span {
+    color: var(--rni-accent);
+}
+
+.rni-sidebar-tagline {
+    font-size: 0.8rem;
+    color: var(--rni-text-muted);
+}
+
 .rni-inline-loading {
-    background: var(--rni-card) !important;
-    border-color: var(--rni-edge) !important;
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.85rem 1.1rem;
+    border-radius: var(--rni-radius-md);
+    background: var(--rni-surface);
+    border: 1px solid var(--rni-border);
+    margin-bottom: 1rem;
 }
-.rni-inline-loading .text { color: #D9E8FB !important; }
-.rni-inline-loading .spinner { border-color: #314C6A !important; border-top-color: var(--rni-accent) !important; }
-@media (max-width: 900px) {
-    div[data-baseweb="tab-list"] button[role="tab"] { flex-basis: 100% !important; max-width: 100% !important; }
-    [data-testid="stMainBlockContainer"] { padding: 1.2rem .9rem 2rem; }
+
+.rni-inline-loading .spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid var(--rni-border);
+    border-top-color: var(--rni-accent);
+    border-radius: 50%;
+    animation: rni_spin 1s linear infinite;
 }
-/* Login page: streamlit-authenticator keeps full control of fields and submission. */
+
+.rni-inline-loading .text {
+    font-size: 0.95rem;
+    color: var(--rni-text);
+}
+
+@keyframes rni_spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+
+/* ------------------------------------------------------------
+   Login form (streamlit-authenticator keeps control of fields)
+   ------------------------------------------------------------ */
+
 .stApp:not(:has(#rni-technical-marker)):not(:has(#rni-business-marker))
 [data-testid="stForm"] {
     max-width: 490px;
     margin: 1rem auto;
     padding: 1.7rem;
-    border: 1px solid #264263;
+    border: 1px solid var(--rni-border);
     border-radius: 18px;
-    background: #101F34;
+    background: var(--rni-surface);
+    box-shadow: var(--rni-shadow);
+}
+
+
+/* ------------------------------------------------------------
+   Responsive adjustments
+   ------------------------------------------------------------ */
+
+@media (max-width: 900px) {
+    div[data-baseweb="tab-list"] button[role="tab"] {
+        flex-basis: 100% !important;
+        max-width: 100% !important;
+    }
+
+    [data-testid="stMainBlockContainer"] {
+        padding: 1.2rem 0.9rem 2rem;
+    }
 }
